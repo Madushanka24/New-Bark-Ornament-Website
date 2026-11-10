@@ -1,0 +1,856 @@
+
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import type { Metadata } from "next";
+import { Suspense } from "react";
+
+import AddToQuote from "@/components/AddToQuote";
+
+import ApprovedProductImage, {
+  type ApprovedPhoto,
+} from "@/components/ApprovedProductImage";
+
+import {
+  getApprovedProductImages,
+  getApprovedProductMainImage,
+  type ApprovedProductGallery,
+} from "@/lib/approved-product-images";
+
+import {
+  getSanityProductPhotography,
+} from "@/lib/sanity-product-photography";
+
+import {
+  products,
+  getRelatedProducts,
+  type Product,
+} from "@/lib/products";
+
+import {
+  resolveCatalogueProductBySlug,
+} from "@/lib/public-catalogue-product";
+
+/**
+ * BARK ORNAMENT — FILE 150 STEP E7Q
+ *
+ * PRODUCT DETAIL PAGE
+ * Theme: Golden Coastal Luxury
+ *
+ * CMS INTEGRATION
+ * - Resolve local products first.
+ * - Prepare gated CMS-only product resolution.
+ * - Use the same resolver for page and metadata.
+ * - Preserve existing local product URLs.
+ * - Keep unapproved CMS records excluded.
+ *
+ * NEXT.JS 16 INSTANT NAVIGATION
+ * - URL-dependent content remains asynchronous.
+ * - Async content stays inside Suspense.
+ * - generateStaticParams preserves local routes.
+ * - generateMetadata preserves canonical URLs.
+ *
+ * APPROVED PHOTOGRAPHY
+ * - Main product image
+ * - Additional view
+ * - Material detail
+ * - Finish detail
+ * - Local approved-image fallback
+ * - Related local product images
+ *
+ * PRESERVED FUNCTIONALITY
+ * - Dynamic product routes
+ * - Product SEO metadata
+ * - Development preview restrictions
+ * - Category breadcrumbs
+ * - Product descriptions
+ * - Materials, sizes and finishes
+ * - Existing local Add to Quote behavior
+ * - Related local product recommendations
+ *
+ * SAFETY
+ * - CMS public integration remains disabled.
+ * - No fabricated products or photographs.
+ * - No direct database access.
+ * - No new API endpoints.
+ * - No email or quotation submission changes.
+ * - CMS-only basket actions remain restricted
+ *   until quotation compatibility is verified.
+ */
+
+type ProductPageProps = {
+  params: Promise<{
+    slug: string;
+  }>;
+};
+
+/* ==========================================
+   1. GENERATE PRODUCT ROUTES
+
+   Preserve the existing local route list.
+
+   CMS-only routes will be resolved at
+   request time after public integration
+   is explicitly activated.
+   ========================================== */
+
+export function generateStaticParams() {
+  /*
+   * Preserve local development previews.
+   *
+   * Never pre-generate draft/demo product
+   * routes in production.
+   */
+
+  const developmentPreviewAllowed =
+    process.env.NODE_ENV === "development" &&
+    process.env.CATALOGUE_CMS_PUBLIC_ENABLED !== "true";
+
+  const eligibleProducts =
+    developmentPreviewAllowed
+      ? products
+      : products.filter(
+          (product) =>
+            product.status === "published" &&
+            product.isDemo === false
+        );
+
+  if (eligibleProducts.length > 0) {
+    return eligibleProducts.map((product) => ({
+      slug: product.slug,
+    }));
+  }
+
+  /*
+   * Next.js 16 Cache Components requires
+   * at least one static parameter.
+   *
+   * This value is not an actual product.
+   * The existing guarded resolver returns
+   * null, causing the page to call notFound().
+   */
+
+  const placeholderSlug =
+    "catalogue-build-validation";
+
+  if (
+    products.some(
+      (product) =>
+        product.slug === placeholderSlug
+    )
+  ) {
+    throw new Error(
+      "Build validation slug conflicts with a real product."
+    );
+  }
+
+  return [{ slug: placeholderSlug }];
+}
+
+/* ==========================================
+   2. DYNAMIC PRODUCT SEO METADATA
+
+   Use the same product resolver as the
+   rendered detail page.
+
+   Draft/demo products remain noindex.
+
+   Unknown products remain noindex.
+   ========================================== */
+
+export async function generateMetadata({
+  params,
+}: ProductPageProps): Promise<Metadata> {
+  const { slug } = await params;
+
+  const resolved =
+    await resolveCatalogueProductBySlug(slug);
+
+  if (!resolved) {
+    return {
+      title: "Product Not Found",
+      robots: {
+        index: false,
+        follow: false,
+      },
+    };
+  }
+
+  const { product } = resolved;
+
+  return {
+    alternates: {
+      canonical: `/products/${product.slug}`,
+    },
+    title: product.name,
+    description: product.shortDescription,
+    robots: {
+      index:
+        product.status === "published" &&
+        !product.isDemo &&
+        resolved.indexable,
+      follow: true,
+    },
+  };
+}
+
+/* ==========================================
+   3. APPROVED PRODUCT PHOTO DISPLAY
+   ========================================== */
+
+/**
+ * Retains the existing product photograph
+ * display interface and luxury placeholders.
+ *
+ * Approved image URLs are validated by
+ * their corresponding image readers.
+ */
+
+function ProductPhotoPlaceholder({
+  label,
+  large = false,
+  photo = null,
+}: {
+  label: string;
+  large?: boolean;
+  photo?: ApprovedPhoto | null;
+}) {
+  return (
+    <ApprovedProductImage
+      label={label}
+      photo={photo}
+      aspect="wide"
+      fit="contain"
+      sizes={
+        large
+          ? "(max-width: 1024px) 100vw, 960px"
+          : "(max-width: 640px) 33vw, 260px"
+      }
+      className={
+        large
+          ? "min-h-[340px] border border-[#D9C8B0] sm:min-h-[460px]"
+          : "min-h-[110px] border border-[#D9C8B0] sm:min-h-[135px]"
+      }
+    />
+  );
+}
+
+/* ==========================================
+   4. SPECIFICATION DISPLAY
+   ========================================== */
+
+function SpecificationList({
+  title,
+  items,
+}: {
+  title: string;
+  items: string[];
+}) {
+  return (
+    <div className="rounded-xl border border-[#E4D7C4] bg-white p-6 text-center">
+      <h3 className="font-serif text-xl text-[#30251F]">
+        {title}
+      </h3>
+
+      {items.length > 0 ? (
+        <ul className="mt-4 flex flex-wrap justify-center gap-2">
+          {items.map((item) => (
+            <li
+              key={item}
+              className="rounded-full bg-[#FAF7F0] px-4 py-2 text-sm text-[#30251F]"
+            >
+              {item}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-4 text-sm leading-7 text-[#74675E]">
+          Specifications to be confirmed.
+        </p>
+      )}
+    </div>
+  );
+}
+
+/* ==========================================
+   5. RELATED PRODUCT PREVIEW CARD
+
+   Existing local related product behavior
+   is preserved.
+
+   CMS-only related recommendations will
+   be connected after all routes support
+   the unified published catalogue.
+   ========================================== */
+
+function RelatedProductCard({
+  product,
+}: {
+  product: Product;
+}) {
+  const photo = getApprovedProductMainImage(
+    product.slug
+  );
+
+  return (
+    <Link
+      href={`/products/${product.slug}`}
+      className="group flex h-full flex-col overflow-hidden rounded-xl border border-[#E4D7C4] bg-white text-center shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-lg motion-reduce:transform-none motion-reduce:transition-none"
+    >
+      <div className="p-3">
+        <ProductPhotoPlaceholder
+          label={product.name}
+          photo={photo}
+        />
+      </div>
+
+      <div className="flex flex-1 flex-col items-center px-6 pb-7 pt-3">
+        {product.isDemo && (
+          <span className="mb-3 rounded-full bg-[#FAF7F0] px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-[#87512C]">
+            Development Preview
+          </span>
+        )}
+
+        <h3 className="font-serif text-xl leading-snug text-[#30251F]">
+          {product.name}
+        </h3>
+
+        <p className="mt-3 flex-1 text-sm leading-7 text-[#74675E]">
+          {product.shortDescription}
+        </p>
+
+        <span className="mt-5 text-sm font-bold text-[#B95016]">
+          View Product Details →
+        </span>
+      </div>
+    </Link>
+  );
+}
+
+/* ==========================================
+   6. PRODUCT DETAIL CONTENT
+
+   All URL-dependent work remains inside
+   this asynchronous component.
+
+   The main exported page places this
+   component inside Suspense.
+   ========================================== */
+
+async function ProductDetailContent({
+  params,
+}: ProductPageProps) {
+  const { slug } = await params;
+
+  /*
+   * Resolve through the unified server-only
+   * product resolver.
+   *
+   * Local products retain precedence.
+   *
+   * Approved CMS products remain gated.
+   */
+
+  const resolved =
+    await resolveCatalogueProductBySlug(slug);
+
+  if (!resolved) {
+    notFound();
+  }
+
+  const {
+    product,
+    category,
+    source,
+  } = resolved;
+
+  /*
+   * Preserve original local recommendations.
+   *
+   * Do not recommend local demo products
+   * on a future CMS-only public product.
+   */
+
+  const relatedInCategory =
+    source === "local"
+      ? getRelatedProducts(
+          product,
+          3,
+          true
+        )
+      : [];
+
+  /*
+   * Existing related-product fallback.
+   *
+   * For local records, preserve previous
+   * same-category and preview suggestions.
+   *
+   * CMS-only related products are held
+   * until complete public route integration.
+   */
+
+  const relatedProducts =
+    source === "local"
+      ? relatedInCategory.length > 0
+        ? relatedInCategory
+        : products
+            .filter(
+              (item) =>
+                item.id !== product.id
+            )
+            .slice(0, 3)
+      : [];
+
+  const hasVerifiedOptions =
+    product.materials.length > 0 ||
+    product.sizes.length > 0 ||
+    product.finishes.length > 0;
+
+  /* ========================================
+     APPROVED PRODUCT PHOTOGRAPHY
+
+     Keep the current local gallery fallback
+     and four photographic slots.
+
+     The product ID now comes from the
+     unified validated catalogue resolver.
+     ======================================== */
+
+  const localGallery =
+    getApprovedProductImages(
+      product.slug
+    );
+
+  const sanityGallery =
+    await getSanityProductPhotography(
+      product.id
+    );
+
+  const gallery: ApprovedProductGallery = {
+    main:
+      sanityGallery?.main ??
+      localGallery.main,
+
+    additional:
+      sanityGallery?.additional[0] ??
+      localGallery.additional,
+
+    material:
+      sanityGallery?.material ??
+      localGallery.material,
+
+    finish:
+      sanityGallery?.finish ??
+      localGallery.finish,
+  };
+
+  const hasApprovedPhotographs = Boolean(
+    gallery.main ||
+      gallery.additional ||
+      gallery.material ||
+      gallery.finish
+  );
+
+  return (
+    <>
+      {/* ====================================
+          1. PRODUCT HERO
+          ==================================== */}
+
+      <section className="relative overflow-hidden bg-[#30251F] px-5 py-16 text-center text-[#FAF7F0] sm:py-20">
+        <div
+          aria-hidden="true"
+          className="absolute -right-24 -top-24 h-72 w-72 rounded-full border border-[#C59A45]/20"
+        />
+
+        <div className="relative mx-auto max-w-4xl">
+          <p className="mb-5 text-xs font-bold uppercase tracking-[0.2em] text-[#E3B65D]">
+            Bark Ornament Product Collection
+          </p>
+
+          <h1
+            className="font-serif text-4xl leading-tight text-[#FAF7F0] sm:text-5xl"
+            style={{
+              color: "#FAF7F0",
+            }}
+          >
+            {product.name}
+          </h1>
+
+          <p className="mx-auto mt-6 max-w-2xl text-base leading-8 text-[#E9DDC9]">
+            {product.shortDescription}
+          </p>
+
+          <nav
+            aria-label="Breadcrumb"
+            className="mt-8 flex flex-wrap items-center justify-center gap-2 text-sm text-[#E9DDC9]"
+          >
+            <Link
+              href="/"
+              className="hover:text-white hover:underline"
+            >
+              Home
+            </Link>
+
+            <span aria-hidden="true">/</span>
+
+            <Link
+              href="/products"
+              className="hover:text-white hover:underline"
+            >
+              Products
+            </Link>
+
+            {category && (
+              <>
+                <span aria-hidden="true">
+                  /
+                </span>
+
+                <Link
+                  href={`/products?category=${category.slug}`}
+                  className="hover:text-white hover:underline"
+                >
+                  {category.name}
+                </Link>
+              </>
+            )}
+
+            <span aria-hidden="true">
+              /
+            </span>
+
+            <span
+              aria-current="page"
+              className="text-[#E3B65D]"
+            >
+              {product.name}
+            </span>
+          </nav>
+        </div>
+      </section>
+
+      {/* ====================================
+          2. PRODUCT PHOTOGRAPHY
+          ==================================== */}
+
+      <section className="section bg-[#FAF7F0]">
+        <div className="container">
+          <div className="mx-auto max-w-5xl text-center">
+            <p className="eyebrow">
+              Product Gallery
+            </p>
+
+            <h2 className="font-serif text-3xl text-[#30251F] sm:text-4xl">
+              Explore the Product
+            </h2>
+
+            <p className="mx-auto mt-5 max-w-2xl text-base leading-8 text-[#74675E]">
+              {hasApprovedPhotographs
+                ? "Explore available approved product photography. Additional views will appear when verified images are provided."
+                : "Actual product photography will be added after images are approved."}
+            </p>
+
+            {/* MAIN PRODUCT PHOTO */}
+
+            <div className="mt-10">
+              <ProductPhotoPlaceholder
+                label={product.name}
+                large
+                photo={gallery.main}
+              />
+            </div>
+
+            {/* SECONDARY PRODUCT PHOTOS */}
+
+            <div className="mt-5 grid grid-cols-3 gap-3 sm:gap-5">
+              <ProductPhotoPlaceholder
+                label="Additional View"
+                photo={gallery.additional}
+              />
+
+              <ProductPhotoPlaceholder
+                label="Material Detail"
+                photo={gallery.material}
+              />
+
+              <ProductPhotoPlaceholder
+                label="Product Finish"
+                photo={gallery.finish}
+              />
+            </div>
+
+            <p className="mt-5 text-xs leading-6 text-[#74675E]">
+              {hasApprovedPhotographs
+                ? "Approved images are displayed where available. Remaining panels are placeholders. This is not an interactive image gallery."
+                : "These are placeholder panels, not actual product photographs or an interactive image gallery."}
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* ====================================
+          3. PRODUCT INFORMATION
+          ==================================== */}
+
+      <section className="section bg-white">
+        <div className="container">
+          <div className="mx-auto max-w-3xl text-center">
+            {product.isDemo && (
+              <span className="mb-6 inline-flex rounded-full border border-[#C59A45] bg-[#FAF7F0] px-5 py-2 text-xs font-bold uppercase tracking-wide text-[#87512C]">
+                Development Preview — Not Verified Inventory
+              </span>
+            )}
+
+            <p className="eyebrow">
+              Product Information
+            </p>
+
+            <h2 className="font-serif text-3xl text-[#30251F] sm:text-4xl">
+              {product.name}
+            </h2>
+
+            {category && (
+              <p className="mt-4 text-sm font-semibold text-[#B95016]">
+                {category.name}
+              </p>
+            )}
+
+            <p className="mt-7 text-base leading-8 text-[#74675E]">
+              {product.description}
+            </p>
+
+            <div className="mt-8 rounded-xl border border-[#E4D7C4] bg-[#FAF7F0] p-6">
+              <h3 className="font-serif text-xl text-[#30251F]">
+                Product Availability
+              </h3>
+
+              <p className="mt-3 text-sm leading-7 text-[#74675E]">
+                {product.isDemo
+                  ? "This record is for website development only. Product availability, specifications and supply options have not been confirmed."
+                  : "Please contact Bark Ornament to confirm current availability and product requirements."}
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ====================================
+          4. MATERIALS AND SPECIFICATIONS
+          ==================================== */}
+
+      <section className="section bg-[#E9DDC9]">
+        <div className="container">
+          <div className="mx-auto mb-10 max-w-3xl text-center">
+            <p className="eyebrow">
+              Product Specifications
+            </p>
+
+            <h2 className="font-serif text-3xl text-[#30251F] sm:text-4xl">
+              Materials, Sizes &amp; Finishes
+            </h2>
+
+            <p className="mx-auto mt-5 max-w-2xl text-base leading-8 text-[#74675E]">
+              Specifications will be displayed
+              after the product information is verified.
+            </p>
+          </div>
+
+          <div className="grid gap-6 md:grid-cols-3">
+            <SpecificationList
+              title="Materials"
+              items={product.materials}
+            />
+
+            <SpecificationList
+              title="Available Sizes"
+              items={product.sizes}
+            />
+
+            <SpecificationList
+              title="Finishing Options"
+              items={product.finishes}
+            />
+          </div>
+
+          {!hasVerifiedOptions && (
+            <p className="mt-7 text-center text-sm text-[#74675E]">
+              No approved technical specifications
+              have been added yet.
+            </p>
+          )}
+
+          <div className="mt-9 text-center">
+            <p className="text-sm font-medium text-[#30251F]">
+              Customization:{" "}
+              <span className="font-normal text-[#74675E]">
+                {product.isDemo
+                  ? "To be confirmed"
+                  : product.customizable
+                    ? "Customization options may be available"
+                    : "Contact us to discuss requirements"}
+              </span>
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* ====================================
+          5. QUOTATION INFORMATION
+          ==================================== */}
+
+      <section className="bg-[#FAF7F0] px-5 py-16 text-center sm:py-20">
+        <div className="mx-auto max-w-3xl">
+          <p className="eyebrow">
+            Product Enquiries
+          </p>
+
+          <h2 className="font-serif text-3xl text-[#30251F] sm:text-4xl">
+            Interested in This Product?
+          </h2>
+
+          <p className="mx-auto mt-6 max-w-2xl text-base leading-8 text-[#74675E]">
+            {source === "local"
+              ? "Add this product to your quotation basket and specify your preferred quantity, materials, sizes and customization."
+              : "Contact Bark Ornament to discuss your preferred quantity, materials, sizes and customization requirements."}
+          </p>
+
+          <div className="mt-10">
+            {source === "local" ? (
+              <AddToQuote product={product} />
+            ) : (
+              <div className="rounded-xl border border-[#E4D7C4] bg-white p-6">
+                <p className="text-sm leading-7 text-[#74675E]">
+                  Online quotation-basket support for this
+                  product is being verified. Please contact
+                  Bark Ornament to discuss your requirements.
+                </p>
+
+                <Link
+                  href="/contact"
+                  className="mt-5 inline-flex min-h-11 items-center justify-center rounded-md bg-[#B95016] px-6 py-3 text-sm font-bold text-white transition-colors hover:bg-[#963E10]"
+                >
+                  Contact Us
+                </Link>
+              </div>
+            )}
+          </div>
+
+          <Link
+            href="/products"
+            className="btn btn-primary mt-8"
+          >
+            Browse More Products →
+          </Link>
+        </div>
+      </section>
+
+      {/* ====================================
+          6. RELATED PRODUCT SUGGESTIONS
+          ==================================== */}
+
+      {relatedProducts.length > 0 && (
+        <section className="section bg-white">
+          <div className="container">
+            <div className="mx-auto mb-10 max-w-3xl text-center">
+              <p className="eyebrow">
+                Discover More
+              </p>
+
+              <h2 className="font-serif text-3xl text-[#30251F] sm:text-4xl">
+                {relatedInCategory.length > 0
+                  ? "Related Products"
+                  : "Other Product Previews"}
+              </h2>
+
+              <p className="mx-auto mt-5 max-w-2xl text-base leading-8 text-[#74675E]">
+                Explore additional product records
+                in our developing catalogue.
+              </p>
+            </div>
+
+            <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+              {relatedProducts.map((item) => (
+                <RelatedProductCard
+                  key={item.id}
+                  product={item}
+                />
+              ))}
+            </div>
+
+            <div className="mt-10 text-center">
+              <Link
+                href="/products"
+                className="btn btn-secondary"
+              >
+                View Full Catalogue →
+              </Link>
+            </div>
+          </div>
+        </section>
+      )}
+    </>
+  );
+}
+
+/* ==========================================
+   7. SUSPENSE LOADING SHELL
+
+   This fallback can render without
+   reading the product URL parameters.
+   ========================================== */
+
+function ProductDetailFallback() {
+  return (
+    <main className="min-h-screen bg-[#FAF7F0] text-[#30251F]">
+      <section className="relative overflow-hidden bg-[#30251F] px-5 py-16 text-center text-[#FAF7F0] sm:py-20">
+        <div
+          aria-hidden="true"
+          className="absolute -right-24 -top-24 h-72 w-72 rounded-full border border-[#C59A45]/20"
+        />
+
+        <div className="relative mx-auto max-w-4xl">
+          <p className="mb-5 text-xs font-bold uppercase tracking-[0.2em] text-[#E3B65D]">
+            Bark Ornament Product Collection
+          </p>
+
+          <h1
+            className="font-serif text-4xl leading-tight text-[#FAF7F0] sm:text-5xl"
+            style={{
+              color: "#FAF7F0",
+            }}
+          >
+            Discover Our Products
+          </h1>
+
+          <p
+            role="status"
+            className="mx-auto mt-6 max-w-2xl text-base leading-8 text-[#E9DDC9]"
+          >
+            Loading product details…
+          </p>
+        </div>
+      </section>
+    </main>
+  );
+}
+
+/* ==========================================
+   8. MAIN DYNAMIC PRODUCT PAGE
+
+   The default exported page does not
+   await URL parameters.
+
+   The asynchronous content is rendered
+   inside Suspense for Instant Navigation.
+   ========================================== */
+
+export default function ProductDetailPage({
+  params,
+}: ProductPageProps) {
+  return (
+    <Suspense fallback={<ProductDetailFallback />}>
+      <ProductDetailContent params={params} />
+    </Suspense>
+  );
+}

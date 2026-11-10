@@ -1,0 +1,182 @@
+
+import "server-only";
+
+/**
+ * FILE 142 — Sanity homepage hero reader.
+ *
+ * Read-only integration with the public
+ * Sanity Content Lake.
+ *
+ * This file does not:
+ * - Modify the existing homepage
+ * - Publish Sanity content
+ * - Require an API token
+ * - Access PostgreSQL
+ * - Submit quotations
+ * - Send email
+ */
+
+export type SanityHomepageHero = Readonly<{
+  src: string;
+  alt: string;
+}>;
+
+type QueryResponse = {
+  result?: unknown;
+};
+
+const API_VERSION = "2025-02-19";
+
+const HERO_QUERY = `
+  *[
+    _type == "homepageHeroImage" &&
+    approved == true &&
+    !(_id in path("drafts.**")) &&
+    defined(image.asset)
+  ]
+  | order(_updatedAt desc)[0] {
+    "src": image.asset->url,
+    alt
+  }
+`;
+
+function getConfiguration() {
+  const projectId =
+    process.env.NEXT_PUBLIC_SANITY_PROJECT_ID?.trim();
+
+  const dataset =
+    process.env.NEXT_PUBLIC_SANITY_DATASET?.trim();
+
+  if (!projectId || !dataset) {
+    return null;
+  }
+
+  if (!/^[a-z0-9-]+$/.test(projectId)) {
+    return null;
+  }
+
+  if (!/^[a-z0-9_-]+$/.test(dataset)) {
+    return null;
+  }
+
+  return {projectId, dataset};
+}
+
+function isValidHero(
+  value: unknown,
+  projectId: string,
+  dataset: string
+): value is SanityHomepageHero {
+  if (
+    typeof value !== "object" ||
+    value === null
+  ) {
+    return false;
+  }
+
+  const image = value as Record<string, unknown>;
+
+  if (
+    typeof image.src !== "string" ||
+    typeof image.alt !== "string"
+  ) {
+    return false;
+  }
+
+  const alt = image.alt.trim();
+
+  if (alt.length < 10 || alt.length > 250) {
+    return false;
+  }
+
+  try {
+    const url = new URL(image.src);
+
+    if (
+      url.protocol !== "https:" ||
+      url.hostname !== "cdn.sanity.io" ||
+      url.port !== "" ||
+      url.username !== "" ||
+      url.password !== ""
+    ) {
+      return false;
+    }
+
+    const prefix =
+      `/images/${projectId}/${dataset}/`;
+
+    if (!url.pathname.startsWith(prefix)) {
+      return false;
+    }
+
+    if (
+      !/\.(jpg|jpeg|png|webp|avif)$/i.test(
+        url.pathname
+      )
+    ) {
+      return false;
+    }
+
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function getSanityHomepageHero():
+  Promise<SanityHomepageHero | null> {
+
+  const config = getConfiguration();
+
+  if (!config) {
+    return null;
+  }
+
+  const {projectId, dataset} = config;
+
+  const endpoint = new URL(
+    `https://${projectId}.api.sanity.io/v${API_VERSION}/data/query/${dataset}`
+  );
+
+  endpoint.searchParams.set("query", HERO_QUERY);
+  endpoint.searchParams.set(
+    "perspective",
+    "published"
+  );
+
+  try {
+    const response = await fetch(endpoint, {
+      method: "GET",
+      cache: "no-store",
+      signal: AbortSignal.timeout(5000),
+      headers: {
+        Accept: "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const data =
+      (await response.json()) as QueryResponse;
+
+    if (
+      !isValidHero(
+        data.result,
+        projectId,
+        dataset
+      )
+    ) {
+      return null;
+    }
+
+    return {
+      src: data.result.src,
+      alt: data.result.alt.trim(),
+    };
+  } catch {
+    // A CMS outage must not break the website.
+    return null;
+  }
+}

@@ -1,0 +1,256 @@
+
+import { Suspense } from "react";
+
+import CatalogueClient from "./CatalogueClient";
+
+import {
+  getPublicCatalogueSnapshot,
+} from "@/lib/catalogue-cms-bridge";
+
+import {
+  products as localProducts,
+  productCategories as localProductCategories,
+} from "@/lib/products";
+
+/**
+ * BARK ORNAMENT — FILE 150 STEP E8D
+ *
+ * PRODUCTS CATALOGUE SERVER PAGE
+ * Theme: Golden Coastal Luxury
+ *
+ * PURPOSE
+ * -------
+ * Separate local development previews from
+ * customer-facing production catalogue data.
+ *
+ * DEVELOPMENT MODE
+ * ----------------
+ * - Preserve the complete local catalogue.
+ * - Preserve development previews.
+ * - Preserve existing categories.
+ * - Preserve search, filters and sorting.
+ *
+ * PRODUCTION, CMS DISABLED
+ * ------------------------
+ * - Do not expose local draft products.
+ * - Do not expose demonstration products.
+ * - Show published non-demo local products.
+ * - Do not contact Sanity.
+ *
+ * CMS PUBLICATION ENABLED
+ * -----------------------
+ * - Use the existing guarded CMS bridge.
+ * - Filter products for publication.
+ * - Preserve the existing Suspense boundary.
+ *
+ * SAFETY
+ * ------
+ * - Does not activate CMS publication.
+ * - Does not modify quotation behavior.
+ * - Does not write to the database.
+ * - Does not send email.
+ *
+ * Product detail and category routes require
+ * independent production-safety verification.
+ */
+
+/* ==========================================
+   1. DEVELOPMENT CATALOGUE
+   ========================================== */
+
+/**
+ * Only the local development server may
+ * render the full development catalogue
+ * when CMS publication is disabled.
+ */
+
+function DevelopmentCatalogueContent() {
+  return (
+    <CatalogueClient
+      catalogueMode="development"
+      catalogueProducts={localProducts}
+      catalogueCategories={localProductCategories}
+    />
+  );
+}
+
+/* ==========================================
+   2. PUBLISHED LOCAL CATALOGUE
+   ========================================== */
+
+/**
+ * Production fallback while public CMS
+ * publication remains disabled.
+ *
+ * Filter before passing products from the
+ * server to the interactive client.
+ *
+ * No draft/demo records are included in
+ * the catalogue props in this branch.
+ */
+
+function PublishedLocalCatalogueContent() {
+  const publishedProducts = localProducts.filter(
+    (product) =>
+      product.status === "published" &&
+      product.isDemo === false
+  );
+
+  return (
+    <CatalogueClient
+      catalogueMode="public"
+      catalogueProducts={publishedProducts}
+      catalogueCategories={localProductCategories}
+    />
+  );
+}
+
+/* ==========================================
+   3. GUARDED CMS CATALOGUE
+   ========================================== */
+
+/**
+ * This component is used only when the
+ * explicit public CMS flag is enabled.
+ *
+ * The bridge performs server-side catalogue
+ * selection and validation.
+ */
+
+async function PublishedCatalogueContent() {
+  const snapshot =
+    await getPublicCatalogueSnapshot();
+
+  /*
+   * Defence in depth:
+   * Do not pass unpublished or demo products
+   * to the browser even if they accidentally
+   * appear in the bridge result.
+   */
+
+  const publicProducts =
+    snapshot.products.filter(
+      (product) =>
+        product.status === "published" &&
+        product.isDemo === false
+    );
+
+  return (
+    <CatalogueClient
+      catalogueMode="public"
+      catalogueProducts={publicProducts}
+      catalogueCategories={snapshot.categories}
+    />
+  );
+}
+
+/* ==========================================
+   4. SAFE PUBLIC LOADING FALLBACK
+   ========================================== */
+
+/**
+ * Preserve the E7Y loading appearance.
+ *
+ * No development product information
+ * is rendered while the CMS bridge loads.
+ */
+
+function PublishedCatalogueFallback() {
+  return (
+    <main
+      className="min-h-screen bg-[#FAF7F0] text-[#30251F]"
+      aria-busy="true"
+    >
+      <section className="relative overflow-hidden bg-[#30251F] px-5 py-16 text-center text-[#FAF7F0] sm:py-20">
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full border border-[#C59A45]/20"
+        />
+
+        <div className="relative mx-auto max-w-4xl">
+          <p className="mb-5 text-xs font-bold uppercase tracking-[0.2em] text-[#E3B65D]">
+            Bark Ornament Product Collection
+          </p>
+
+          <h1
+            className="font-serif text-4xl leading-tight sm:text-5xl"
+            style={{
+              color: "#FAF7F0",
+            }}
+          >
+            Explore Our Products
+          </h1>
+
+          <p
+            role="status"
+            className="mx-auto mt-6 max-w-2xl text-base leading-8 text-[#E9DDC9]"
+          >
+            Loading available product collections…
+          </p>
+        </div>
+      </section>
+    </main>
+  );
+}
+
+/* ==========================================
+   5. PRODUCTS PAGE SERVER ENTRY POINT
+   ========================================== */
+
+export default function ProductsPage() {
+  const cmsPublicationEnabled =
+    process.env.CATALOGUE_CMS_PUBLIC_ENABLED ===
+    "true";
+
+  const localDevelopmentMode =
+    process.env.NODE_ENV === "development";
+
+  /*
+   * CASE A:
+   *
+   * Local development server with
+   * public CMS publication disabled.
+   *
+   * Preserve all development previews.
+   */
+
+  if (
+    !cmsPublicationEnabled &&
+    localDevelopmentMode
+  ) {
+    return <DevelopmentCatalogueContent />;
+  }
+
+  /*
+   * CASE B:
+   *
+   * Production build with public CMS
+   * publication disabled.
+   *
+   * Render published local products only.
+   *
+   * Never render development catalogue
+   * props on this path.
+   */
+
+  if (!cmsPublicationEnabled) {
+    return <PublishedLocalCatalogueContent />;
+  }
+
+  /*
+   * CASE C:
+   *
+   * Explicitly enabled public CMS mode.
+   *
+   * Continue through the existing
+   * server-only catalogue bridge.
+   */
+
+  return (
+    <Suspense
+      fallback={<PublishedCatalogueFallback />}
+    >
+      <PublishedCatalogueContent />
+    </Suspense>
+  );
+}

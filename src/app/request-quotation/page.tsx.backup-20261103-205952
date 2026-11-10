@@ -1,0 +1,1686 @@
+
+"use client";
+
+/* ==========================================
+   BARK ORNAMENT (PVT) LTD
+
+   FILE 29 - REQUEST A QUOTATION
+
+   src/app/request-quotation/page.tsx
+
+   Golden Coastal Luxury
+
+   Includes:
+   - Quotation basket review
+   - Quantity and notes editing
+   - Product removal and clear basket
+   - Controlled customer information form
+   - Cloudflare Turnstile verification
+   - Customer consent
+   - Honeypot field
+   - Secure API submission
+   - Idempotency-key reuse on retries
+   - Validation/error handling
+   - Success reference display
+
+   IMPORTANT:
+   Server-side submission remains disabled
+   until the backend is approved for use.
+   ========================================== */
+
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
+
+import Link from "next/link";
+import Script from "next/script";
+
+import {
+  useQuoteBasket,
+} from "@/components/QuoteBasketProvider";
+
+import {
+  MAX_ITEM_QUANTITY,
+  type QuoteBasketItem,
+} from "@/lib/quote-basket";
+
+import {
+  buildQuotationEmailDraft,
+  type QuotationEmailDraft,
+} from "@/lib/quotation-email-draft";
+
+/**
+ * FILE 128: Recipient activation safeguard.
+ *
+ * Keep empty until the company explicitly
+ * approves the website quotation mailbox.
+ *
+ * Do not substitute an unverified address.
+ */
+const APPROVED_QUOTATION_RECIPIENT = "";
+
+/* ==========================================
+   TURNSTILE TYPES
+   ========================================== */
+
+type TurnstileOptions = {
+  sitekey: string;
+  action: string;
+  theme: "light";
+  size: "flexible";
+  "response-field": boolean;
+  callback: (token: string) => void;
+  "error-callback": (code?: string) => boolean;
+  "expired-callback": () => void;
+  "timeout-callback": () => void;
+};
+
+type TurnstileClient = {
+  render: (
+    container: HTMLElement,
+    options: TurnstileOptions
+  ) => string | undefined;
+
+  reset: (widgetId: string) => void;
+  remove: (widgetId: string) => void;
+};
+
+declare global {
+  interface Window {
+    turnstile?: TurnstileClient;
+  }
+}
+
+/* ==========================================
+   TURNSTILE PUBLIC CONFIGURATION
+   ========================================== */
+
+const TURNSTILE_SITE_KEY =
+  process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ??
+  "";
+
+const TURNSTILE_ACTION =
+  process.env.NEXT_PUBLIC_TURNSTILE_ACTION ??
+  "";
+
+const TEST_SITE_KEYS = new Set([
+  "1x00000000000000000000AA",
+  "2x00000000000000000000AB",
+  "1x00000000000000000000BB",
+  "2x00000000000000000000BB",
+  "3x00000000000000000000FF",
+]);
+
+const TURNSTILE_CONFIGURED =
+  TURNSTILE_SITE_KEY.length > 0 &&
+  /^[a-zA-Z0-9_-]{1,32}$/.test(
+    TURNSTILE_ACTION
+  ) &&
+  !(
+    process.env.NODE_ENV === "production" &&
+    TEST_SITE_KEYS.has(TURNSTILE_SITE_KEY)
+  );
+
+/* ==========================================
+   CUSTOMER FORM TYPES
+   ========================================== */
+
+type CustomerForm = {
+  fullName: string;
+  companyName: string;
+  email: string;
+  phone: string;
+  destination: string;
+  otherDestination: string;
+  requiredDeliveryDate: string;
+  message: string;
+  consent: boolean;
+  website: string;
+};
+
+const INITIAL_CUSTOMER: CustomerForm = {
+  fullName: "",
+  companyName: "",
+  email: "",
+  phone: "",
+  destination: "",
+  otherDestination: "",
+  requiredDeliveryDate: "",
+  message: "",
+  consent: false,
+  website: "",
+};
+
+type ApiResponse = {
+  success?: boolean;
+  reference?: string;
+  duplicate?: boolean;
+  code?: string;
+  message?: string;
+  errors?: Array<{
+    field: string;
+    message: string;
+  }>;
+  retryAfterSeconds?: number;
+};
+
+type SubmissionStatus =
+  | "idle"
+  | "submitting"
+  | "success"
+  | "error";
+
+type TurnstileStatus =
+  | "loading"
+  | "ready"
+  | "verified"
+  | "expired"
+  | "error";
+
+/* ==========================================
+   QUANTITY CONTROL
+   ========================================== */
+
+function QuantityControl({
+  item,
+  onChange,
+}: {
+  item: QuoteBasketItem;
+  onChange: (
+    id: string,
+    quantity: number
+  ) => void;
+}) {
+  const [draft, setDraft] = useState(
+    String(item.quantity)
+  );
+
+  useEffect(() => {
+    setDraft(String(item.quantity));
+  }, [item.quantity]);
+
+  function applyQuantity() {
+    const value = Number(draft);
+
+    if (
+      !Number.isSafeInteger(value) ||
+      value < 1 ||
+      value > MAX_ITEM_QUANTITY
+    ) {
+      setDraft(String(item.quantity));
+      return;
+    }
+
+    onChange(item.id, value);
+  }
+
+  return (
+    <div className="flex items-center justify-center gap-2">
+      <button
+        type="button"
+        aria-label={`Decrease quantity for ${item.productName}`}
+        disabled={item.quantity <= 1}
+        onClick={() =>
+          onChange(item.id, item.quantity - 1)
+        }
+        className="flex h-11 w-11 items-center justify-center rounded-md border border-[#D9C8B0] bg-[#FAF7F0] text-xl text-[#30251F] hover:bg-[#E9DDC9] disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        −
+      </button>
+
+      <input
+        type="number"
+        min={1}
+        max={MAX_ITEM_QUANTITY}
+        step={1}
+        value={draft}
+        aria-label={`Quantity for ${item.productName}`}
+        onChange={(event) =>
+          setDraft(event.target.value)
+        }
+        onBlur={applyQuantity}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            event.currentTarget.blur();
+          }
+        }}
+        className="h-11 w-24 rounded-md border border-[#D9C8B0] bg-white px-2 text-center text-sm font-bold text-[#30251F]"
+      />
+
+      <button
+        type="button"
+        aria-label={`Increase quantity for ${item.productName}`}
+        disabled={
+          item.quantity >= MAX_ITEM_QUANTITY
+        }
+        onClick={() =>
+          onChange(item.id, item.quantity + 1)
+        }
+        className="flex h-11 w-11 items-center justify-center rounded-md border border-[#D9C8B0] bg-[#FAF7F0] text-xl text-[#30251F] hover:bg-[#E9DDC9] disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        +
+      </button>
+    </div>
+  );
+}
+
+/* ==========================================
+   BASKET ITEM CARD
+
+   Centered presentation from File 28.
+   ========================================== */
+
+function BasketItemCard({
+  item,
+  onQuantityChange,
+  onNotesChange,
+  onRemove,
+  disabled = false,
+}: {
+  item: QuoteBasketItem;
+  onQuantityChange: (
+    id: string,
+    quantity: number
+  ) => void;
+  onNotesChange: (
+    id: string,
+    notes: string
+  ) => void;
+  onRemove: (id: string) => void;
+  disabled?: boolean;
+}) {
+  const notesId = useId();
+
+  const [notes, setNotes] = useState(
+    item.notes
+  );
+
+  useEffect(() => {
+    setNotes(item.notes);
+  }, [item.notes]);
+
+  const options = [
+    ["Material", item.options.material],
+    ["Size", item.options.size],
+    ["Finish", item.options.finish],
+    [
+      "Customization",
+      item.options.customization,
+    ],
+  ].filter((entry) => entry[1]);
+
+  return (
+    <article className="rounded-xl border border-[#E4D7C4] bg-white p-5 shadow-sm sm:p-7">
+      <div className="flex flex-col items-center gap-4 text-center">
+        <div className="flex w-full justify-end">
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => onRemove(item.id)}
+            className="min-h-11 rounded-md border border-[#D9C8B0] px-4 py-2 text-sm font-semibold text-[#963E10] hover:bg-[#FAF7F0] disabled:opacity-50"
+          >
+            Remove Product
+          </button>
+        </div>
+
+        <div className="mx-auto flex w-full min-w-0 flex-col items-center text-center">
+          <p className="mb-2 text-xs font-bold uppercase tracking-wider text-[#B95016]">
+            {item.categorySlug.replaceAll(
+              "-",
+              " "
+            )}
+          </p>
+
+          <h3 className="font-serif text-2xl text-[#30251F]">
+            {item.productName}
+          </h3>
+
+          <Link
+            href={`/products/${item.productSlug}`}
+            className="mt-3 inline-flex min-h-10 items-center text-sm font-semibold text-[#B95016] hover:underline"
+          >
+            View Product Details →
+          </Link>
+        </div>
+      </div>
+
+      {options.length > 0 && (
+        <dl className="mt-5 grid gap-3 rounded-lg bg-[#FAF7F0] p-4 text-sm sm:grid-cols-2">
+          {options.map(([label, value]) => (
+            <div
+              key={label}
+              className="min-w-0 text-center"
+            >
+              <dt className="font-semibold text-[#30251F]">
+                {label}
+              </dt>
+
+              <dd className="mt-1 break-words text-[#74675E]">
+                {value}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      )}
+
+      <div className="mt-6 flex flex-col items-center gap-3">
+        <p className="text-sm font-bold text-[#30251F]">
+          Requested Quantity
+        </p>
+
+        <fieldset disabled={disabled}>
+          <QuantityControl
+            item={item}
+            onChange={onQuantityChange}
+          />
+        </fieldset>
+      </div>
+
+      <div className="mt-6">
+        <label
+          htmlFor={notesId}
+          className="mb-2 block text-center text-sm font-semibold text-[#30251F]"
+        >
+          Product Requirements / Notes
+        </label>
+
+        <textarea
+          id={notesId}
+          value={notes}
+          rows={3}
+          maxLength={2000}
+          disabled={disabled}
+          placeholder="Additional product requirements..."
+          onChange={(event) =>
+            setNotes(event.target.value)
+          }
+          onBlur={() =>
+            onNotesChange(item.id, notes)
+          }
+          className="form-textarea"
+        />
+
+        <p className="mt-2 text-center text-xs text-[#74675E]">
+          Notes are saved when you leave
+          this field.
+        </p>
+      </div>
+    </article>
+  );
+}
+
+/* ==========================================
+   CUSTOMER INPUT FIELD
+   ========================================== */
+
+function CustomerField({
+  id,
+  label,
+  value,
+  onChange,
+  type = "text",
+  required = false,
+  placeholder,
+  autoComplete,
+  maxLength,
+  disabled,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  type?: string;
+  required?: boolean;
+  placeholder?: string;
+  autoComplete?: string;
+  maxLength?: number;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="text-left">
+      <label
+        htmlFor={id}
+        className="form-label"
+      >
+        {label}
+        {required && (
+          <span className="ml-1 text-[#B95016]">
+            *
+          </span>
+        )}
+      </label>
+
+      <input
+        id={id}
+        name={id}
+        type={type}
+        required={required}
+        value={value}
+        disabled={disabled}
+        placeholder={placeholder}
+        autoComplete={autoComplete}
+        maxLength={maxLength}
+        onChange={(event) =>
+          onChange(event.target.value)
+        }
+        className="form-input"
+      />
+    </div>
+  );
+}
+
+/* ==========================================
+   TURNSTILE COMPONENT
+
+   Reports its token to the parent form.
+
+   The token is never saved to localStorage.
+   ========================================== */
+
+function QuotationTurnstile({
+  onTokenChange,
+  resetRef,
+}: {
+  onTokenChange: (token: string) => void;
+  resetRef: React.RefObject<(() => void) | null>;
+}) {
+  const containerRef =
+    useRef<HTMLDivElement>(null);
+
+  const widgetIdRef =
+    useRef<string | null>(null);
+
+  const tokenCallbackRef =
+    useRef(onTokenChange);
+
+  const [scriptReady, setScriptReady] =
+    useState(false);
+
+  const [status, setStatus] =
+    useState<TurnstileStatus>("loading");
+
+  const [message, setMessage] =
+    useState(
+      "Loading security verification..."
+    );
+
+  useEffect(() => {
+    tokenCallbackRef.current =
+      onTokenChange;
+  }, [onTokenChange]);
+
+  function resetChallenge() {
+    tokenCallbackRef.current("");
+
+    setStatus("ready");
+    setMessage(
+      "Complete the refreshed security check."
+    );
+
+    const id = widgetIdRef.current;
+
+    if (id && window.turnstile) {
+      window.turnstile.reset(id);
+    }
+  }
+
+  const resetCallbackRef =
+    useRef(resetChallenge);
+
+  resetCallbackRef.current = resetChallenge;
+
+  useEffect(() => {
+    resetRef.current = () =>
+      resetCallbackRef.current();
+
+    return () => {
+      resetRef.current = null;
+    };
+  }, [resetRef]);
+
+  useEffect(() => {
+    if (
+      !TURNSTILE_CONFIGURED ||
+      !scriptReady ||
+      !containerRef.current ||
+      !window.turnstile
+    ) {
+      return;
+    }
+
+    const turnstile = window.turnstile;
+    const container = containerRef.current;
+
+    let active = true;
+
+    setStatus("ready");
+    setMessage(
+      "Complete the security check below."
+    );
+
+    const widgetId = turnstile.render(
+      container,
+      {
+        sitekey: TURNSTILE_SITE_KEY,
+        action: TURNSTILE_ACTION,
+        theme: "light",
+        size: "flexible",
+        "response-field": false,
+
+        callback: (token) => {
+          if (!active) return;
+
+          tokenCallbackRef.current(token);
+
+          setStatus("verified");
+          setMessage(
+            "Security challenge completed. " +
+            "Server verification will occur " +
+            "when the enquiry is submitted."
+          );
+        },
+
+        "error-callback": () => {
+          if (active) {
+            tokenCallbackRef.current("");
+            setStatus("error");
+            setMessage(
+              "Security verification encountered " +
+              "an error. Please retry."
+            );
+          }
+
+          return true;
+        },
+
+        "expired-callback": () => {
+          if (!active) return;
+
+          tokenCallbackRef.current("");
+          setStatus("expired");
+          setMessage(
+            "Your security check expired. " +
+            "Please complete it again."
+          );
+        },
+
+        "timeout-callback": () => {
+          if (!active) return;
+
+          tokenCallbackRef.current("");
+          setStatus("expired");
+          setMessage(
+            "The security check timed out. " +
+            "Please retry."
+          );
+        },
+      }
+    );
+
+    if (!widgetId) {
+      setStatus("error");
+      setMessage(
+        "Unable to display the security check."
+      );
+
+      return () => {
+        active = false;
+      };
+    }
+
+    widgetIdRef.current = widgetId;
+
+    return () => {
+      active = false;
+      tokenCallbackRef.current("");
+      widgetIdRef.current = null;
+      turnstile.remove(widgetId);
+    };
+  }, [scriptReady]);
+
+  if (!TURNSTILE_CONFIGURED) {
+    return (
+      <div className="rounded-lg border border-[#D9C8B0] bg-white p-5 text-center">
+        <p
+          role="status"
+          className="text-sm text-[#963E10]"
+        >
+          Security verification is not
+          configured for this environment.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-xl border border-[#E4D7C4] bg-white p-5 text-center sm:p-7">
+      <Script
+        src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"
+        strategy="afterInteractive"
+        onReady={() =>
+          setScriptReady(true)
+        }
+        onError={() => {
+          tokenCallbackRef.current("");
+          setStatus("error");
+          setMessage(
+            "Could not load security verification."
+          );
+        }}
+      />
+
+      <p className="mb-3 text-xs font-bold uppercase tracking-[0.12em] text-[#B95016]">
+        Website Security
+      </p>
+
+      <h3 className="font-serif text-xl text-[#30251F]">
+        Security Verification
+      </h3>
+
+      <p className="mx-auto mt-3 max-w-lg text-sm leading-7 text-[#74675E]">
+        Complete the security check
+        before submitting your enquiry.
+      </p>
+
+      <div className="mt-6 flex min-h-[90px] w-full justify-center overflow-hidden">
+        <div
+          ref={containerRef}
+          aria-label="Cloudflare Turnstile security verification"
+          className="w-full max-w-[340px]"
+        />
+      </div>
+
+      <p
+        role="status"
+        aria-live="polite"
+        className={`mx-auto mt-4 max-w-lg text-sm leading-6 ${
+          status === "verified"
+            ? "text-[#436D45]"
+            : status === "error" ||
+                status === "expired"
+              ? "text-[#963E10]"
+              : "text-[#74675E]"
+        }`}
+      >
+        {message}
+      </p>
+
+      {(status === "expired" ||
+        status === "error") &&
+        widgetIdRef.current && (
+          <button
+            type="button"
+            onClick={resetChallenge}
+            className="mt-4 min-h-11 rounded-md border border-[#B95016] px-5 py-2 text-sm font-semibold text-[#963E10] hover:bg-[#FAF7F0]"
+          >
+            Retry Security Check
+          </button>
+        )}
+
+      <p className="mt-4 text-xs leading-6 text-[#74675E]">
+        Protected by Cloudflare Turnstile.
+      </p>
+    </div>
+  );
+}
+
+/* ==========================================
+   MAIN QUOTATION PAGE
+   ========================================== */
+
+export default function RequestQuotationPage() {
+  const {
+    items,
+    itemCount,
+    totalQuantity,
+    isEmpty,
+    isLoaded,
+    changeQuantity,
+    changeNotes,
+    removeItem,
+    clearItems,
+  } = useQuoteBasket();
+
+  /* Customer form state */
+
+  const [customer, setCustomer] =
+    useState<CustomerForm>({
+      ...INITIAL_CUSTOMER,
+    });
+
+  /* Turnstile token */
+
+  const [turnstileToken, setTurnstileToken] =
+    useState("");
+
+  const resetTurnstileRef =
+    useRef<(() => void) | null>(null);
+
+  /* Submission feedback */
+
+  const [submissionStatus, setSubmissionStatus] =
+    useState<SubmissionStatus>("idle");
+
+  const [submissionMessage, setSubmissionMessage] =
+    useState("");
+
+  const [savedReference, setSavedReference] =
+    useState("");
+
+  const [validationErrors, setValidationErrors] =
+    useState<string[]>([]);
+
+  /* Stable idempotency key for retries
+     of the same logical request. */
+
+  const submissionIdentityRef = useRef<{
+    payload: string;
+    key: string;
+  } | null>(null);
+
+  /* Synchronous double-click guard */
+
+  const submittingRef = useRef(false);
+
+  const isSubmitting =
+    submissionStatus === "submitting";
+
+  const isSuccess =
+    submissionStatus === "success";
+
+  function updateCustomer(
+    field: keyof CustomerForm,
+    value: string | boolean
+  ) {
+    setCustomer((previous) => ({
+      ...previous,
+      [field]: value,
+    }));
+
+    if (submissionStatus === "error") {
+      setSubmissionStatus("idle");
+      setSubmissionMessage("");
+      setValidationErrors([]);
+    }
+  }
+
+  function handleClearBasket() {
+    if (
+      window.confirm(
+        "Remove all products from your quotation basket?"
+      )
+    ) {
+      clearItems();
+      submissionIdentityRef.current = null;
+    }
+  }
+
+  /* ========================================
+     SUBMIT TO SECURE API
+     ======================================== */
+
+  async function handleSubmit(
+    event: FormEvent<HTMLFormElement>
+  ) {
+    event.preventDefault();
+
+    if (submittingRef.current || isSuccess) {
+      return;
+    }
+
+    setValidationErrors([]);
+    setSubmissionMessage("");
+
+    if (!isLoaded || isEmpty) {
+      setSubmissionStatus("error");
+      setSubmissionMessage(
+        "Please add at least one product " +
+        "to your quotation basket."
+      );
+      return;
+    }
+
+    if (!customer.consent) {
+      setSubmissionStatus("error");
+      setSubmissionMessage(
+        "Please agree to the processing " +
+        "of your enquiry information."
+      );
+      return;
+    }
+
+    if (
+      customer.destination === "Other" &&
+      !customer.otherDestination.trim()
+    ) {
+      setSubmissionStatus("error");
+      setSubmissionMessage(
+        "Please specify your delivery destination."
+      );
+      return;
+    }
+
+    if (!turnstileToken) {
+      setSubmissionStatus("error");
+      setSubmissionMessage(
+        "Please complete the security " +
+        "verification before submitting."
+      );
+      return;
+    }
+
+    /* Match the File 16 validation shape. */
+
+    const requestCustomer = {
+      fullName: customer.fullName.trim(),
+      companyName: customer.companyName.trim(),
+      email: customer.email.trim(),
+      phone: customer.phone.trim(),
+      destination: customer.destination,
+      otherDestination:
+        customer.destination === "Other"
+          ? customer.otherDestination.trim()
+          : "",
+      requiredDeliveryDate:
+        customer.requiredDeliveryDate,
+      message: customer.message.trim(),
+      consent: customer.consent,
+    };
+
+    const requestItems = items.map((item) => ({
+      productId: item.productId,
+      productSlug: item.productSlug,
+      quantity: item.quantity,
+      options: {
+        material:
+          item.options.material ?? "",
+        size:
+          item.options.size ?? "",
+        finish:
+          item.options.finish ?? "",
+        customization:
+          item.options.customization ?? "",
+      },
+      notes: item.notes,
+    }));
+
+    /*
+     * A payload signature defines the
+     * logical enquiry.
+     *
+     * Exclude the Turnstile token since
+     * it changes when a challenge expires.
+     */
+
+    const logicalPayload = JSON.stringify({
+      customer: requestCustomer,
+      items: requestItems,
+    });
+
+    let idempotencyKey: string;
+
+    if (
+      submissionIdentityRef.current?.payload ===
+      logicalPayload
+    ) {
+      idempotencyKey =
+        submissionIdentityRef.current.key;
+    } else {
+      idempotencyKey = crypto.randomUUID();
+
+      submissionIdentityRef.current = {
+        payload: logicalPayload,
+        key: idempotencyKey,
+      };
+    }
+
+    const body = {
+      website: customer.website,
+      customer: requestCustomer,
+      items: requestItems,
+      turnstileToken,
+    };
+
+    submittingRef.current = true;
+    setSubmissionStatus("submitting");
+
+    try {
+      const response = await fetch(
+        "/api/quotations",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Idempotency-Key":
+              idempotencyKey,
+          },
+          body: JSON.stringify(body),
+          cache: "no-store",
+        }
+      );
+
+      let result: ApiResponse = {};
+
+      try {
+        const parsed: unknown =
+          await response.json();
+
+        if (
+          typeof parsed === "object" &&
+          parsed !== null &&
+          !Array.isArray(parsed)
+        ) {
+          result = parsed as ApiResponse;
+        }
+      } catch {
+        // Never mistake malformed JSON
+        // for a successful submission.
+      }
+
+      const confirmedSuccess =
+        response.ok &&
+        result.success === true &&
+        typeof result.reference === "string" &&
+        result.reference.length > 0;
+
+      if (confirmedSuccess) {
+        setSavedReference(
+          result.reference as string
+        );
+
+        setSubmissionStatus("success");
+
+        setSubmissionMessage(
+          "Your quotation enquiry was " +
+          "saved successfully. " +
+          "Please keep your reference number."
+        );
+
+        submissionIdentityRef.current = null;
+
+        clearItems();
+        return;
+      }
+
+      setSubmissionStatus("error");
+
+      if (
+        Array.isArray(result.errors)
+      ) {
+        setValidationErrors(
+          result.errors
+            .filter(
+              (issue) =>
+                typeof issue?.message ===
+                "string"
+            )
+            .slice(0, 8)
+            .map((issue) => issue.message)
+        );
+      }
+
+      /* Recognize the API's security errors. */
+
+      if (response.status === 429) {
+        const headerValue = Number(
+          response.headers.get("Retry-After")
+        );
+
+        const seconds =
+          Number.isFinite(headerValue) &&
+          headerValue > 0
+            ? Math.ceil(headerValue)
+            : null;
+
+        setSubmissionMessage(
+          seconds
+            ? `Too many attempts. Please wait approximately ${seconds} seconds before trying again.`
+            : "Too many attempts. Please try again later."
+        );
+      } else if (
+        result.code === "BOT_VERIFICATION_FAILED"
+      ) {
+        setSubmissionMessage(
+          "Security verification failed. " +
+          "Please complete the refreshed " +
+          "security check."
+        );
+
+        resetTurnstileRef.current?.();
+      } else if (
+        result.code ===
+        "BOT_VERIFICATION_UNAVAILABLE"
+      ) {
+        setSubmissionMessage(
+          "The security verification service " +
+          "is temporarily unavailable. " +
+          "Please try again later."
+        );
+
+        resetTurnstileRef.current?.();
+      } else if (
+        result.code ===
+        "SUBMISSIONS_DISABLED"
+      ) {
+        setSubmissionMessage(
+          "Quotation submission is not " +
+          "available yet. Your basket has " +
+          "not been submitted or cleared."
+        );
+      } else if (
+        result.code ===
+        "IDEMPOTENCY_CONFLICT"
+      ) {
+        setSubmissionMessage(
+          "This submission key belongs to " +
+          "another enquiry. Please review " +
+          "your details before trying again."
+        );
+      } else if (
+        response.status === 422
+      ) {
+        setSubmissionMessage(
+          "Please review your customer " +
+          "information and selected products. " +
+          "The server rejected this enquiry."
+        );
+      } else {
+        setSubmissionMessage(
+          typeof result.message === "string"
+            ? result.message
+            : "The enquiry could not be " +
+              "completed. Please try again later."
+        );
+      }
+    } catch {
+      /*
+       * A network failure does not prove
+       * the server failed to save.
+       *
+       * Keep the same idempotency key.
+       * Refresh the one-time Turnstile token.
+       */
+
+      resetTurnstileRef.current?.();
+
+      setSubmissionStatus("error");
+
+      setSubmissionMessage(
+        "The connection was interrupted. " +
+        "Your basket is still available. " +
+        "Complete a fresh security check " +
+        "before retrying."
+      );
+    } finally {
+      submittingRef.current = false;
+    }
+  }
+
+  /* ========================================
+     PAGE
+     ======================================== */
+
+  return (
+    <>
+      {/* PAGE HERO */}
+
+      <section className="bg-[#30251F] px-5 py-20 text-center">
+        <div className="mx-auto max-w-3xl">
+          <p className="mb-5 text-xs font-bold uppercase tracking-[0.2em] text-[#E3B65D]">
+            Bark Ornament Product Enquiry
+          </p>
+
+          <h1 className="font-serif text-4xl text-[#FAF7F0] sm:text-5xl">
+            Request a Quotation
+          </h1>
+
+          <p className="mx-auto mt-6 max-w-2xl text-base leading-8 text-[#E9DDC9]">
+            Review your selected products
+            and prepare your customized
+            hospitality enquiry.
+          </p>
+
+          <nav
+            aria-label="Breadcrumb"
+            className="mt-8 flex justify-center gap-2 text-sm text-[#E9DDC9]"
+          >
+            <Link
+              href="/"
+              className="hover:underline"
+            >
+              Home
+            </Link>
+
+            <span aria-hidden="true">
+              /
+            </span>
+
+            <span aria-current="page">
+              Request a Quotation
+            </span>
+          </nav>
+        </div>
+      </section>
+
+      {/* BASKET REVIEW */}
+
+      <section className="section bg-[#FAF7F0]">
+        <div className="container max-w-[1100px]">
+          <div className="mx-auto mb-10 max-w-3xl text-center">
+            <p className="eyebrow">
+              Quotation Basket
+            </p>
+
+            <h2 className="font-serif text-3xl text-[#30251F] sm:text-4xl">
+              Your Selected Products
+            </h2>
+
+            <p className="mt-5 text-[#74675E]">
+              Review quantities, update
+              requirements or remove items.
+            </p>
+          </div>
+
+          {!isLoaded ? (
+            <p
+              role="status"
+              className="py-12 text-center text-[#74675E]"
+            >
+              Loading your quotation basket...
+            </p>
+          ) : isEmpty ? (
+            <div className="mx-auto max-w-xl rounded-xl border border-[#E4D7C4] bg-white p-10 text-center">
+              <h3 className="font-serif text-2xl text-[#30251F]">
+                Your Quote Basket Is Empty
+              </h3>
+
+              <p className="mt-4 text-sm leading-7 text-[#74675E]">
+                Explore our hospitality products
+                and add items to your basket.
+              </p>
+
+              <Link
+                href="/products"
+                className="btn btn-primary mt-7"
+              >
+                Explore Products →
+              </Link>
+            </div>
+          ) : (
+            <>
+              <div className="space-y-6">
+                {items.map((item) => (
+                  <BasketItemCard
+                    key={item.id}
+                    item={item}
+                    disabled={isSubmitting || isSuccess}
+                    onQuantityChange={
+                      changeQuantity
+                    }
+                    onNotesChange={changeNotes}
+                    onRemove={removeItem}
+                  />
+                ))}
+              </div>
+
+              <div className="mt-8 rounded-xl border border-[#E4D7C4] bg-[#E9DDC9] p-6 text-center sm:p-8">
+                <h3 className="font-serif text-2xl text-[#30251F]">
+                  Quotation Summary
+                </h3>
+
+                <div className="mt-5 flex flex-wrap justify-center gap-8">
+                  <div>
+                    <p className="text-3xl font-bold text-[#30251F]">
+                      {itemCount}
+                    </p>
+
+                    <p className="text-sm text-[#74675E]">
+                      Product Selections
+                    </p>
+                  </div>
+
+                  <div>
+                    <p className="text-3xl font-bold text-[#30251F]">
+                      {totalQuantity}
+                    </p>
+
+                    <p className="text-sm text-[#74675E]">
+                      Requested Units
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-7 flex flex-wrap justify-center gap-3">
+                  <Link
+                    href="/products"
+                    className="btn btn-secondary"
+                  >
+                    Add More Products
+                  </Link>
+
+                  <button
+                    type="button"
+                    disabled={
+                      isSubmitting || isSuccess
+                    }
+                    onClick={handleClearBasket}
+                    className="btn border border-[#B95016] bg-white text-[#963E10] hover:bg-[#FAF7F0] disabled:opacity-50"
+                  >
+                    Clear Basket
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </section>
+
+      {/* CUSTOMER FORM */}
+
+      <section className="section bg-white">
+        <div className="container max-w-[950px]">
+          <div className="mx-auto mb-10 max-w-3xl text-center">
+            <p className="eyebrow">
+              Customer Information
+            </p>
+
+            <h2 className="font-serif text-3xl text-[#30251F] sm:text-4xl">
+              Your Enquiry Details
+            </h2>
+
+            <p className="mt-5 text-base leading-8 text-[#74675E]">
+              Complete your contact information
+              and security verification.
+            </p>
+          </div>
+
+          {isSuccess ? (
+            <div
+              role="status"
+              className="rounded-2xl border border-[#C59A45] bg-[#FAF7F0] p-8 text-center"
+            >
+              <h3 className="font-serif text-3xl text-[#30251F]">
+                Quotation Request Received
+              </h3>
+
+              <p className="mt-5 text-[#74675E]">
+                Your confirmed quotation reference:
+              </p>
+
+              <p className="mt-3 break-words text-xl font-bold text-[#B95016]">
+                {savedReference}
+              </p>
+
+              <p className="mt-5 text-sm leading-7 text-[#74675E]">
+                {submissionMessage}
+              </p>
+
+              <p className="mt-3 text-xs text-[#74675E]">
+                Database confirmation does not
+                necessarily mean an email has
+                been delivered.
+              </p>
+
+              <Link
+                href="/products"
+                className="btn btn-primary mt-7"
+              >
+                Explore More Products
+              </Link>
+            </div>
+          ) : (
+            <form
+              onSubmit={handleSubmit}
+              className="rounded-2xl border border-[#E4D7C4] bg-[#FAF7F0] p-5 sm:p-8"
+            >
+              <fieldset
+                disabled={isSubmitting}
+                className="min-w-0"
+              >
+                <div className="grid gap-6 sm:grid-cols-2">
+                  <CustomerField
+                    id="customer-name"
+                    label="Full Name"
+                    required
+                    maxLength={120}
+                    value={customer.fullName}
+                    onChange={(value) =>
+                      updateCustomer(
+                        "fullName",
+                        value
+                      )
+                    }
+                    autoComplete="name"
+                    placeholder="Your full name"
+                  />
+
+                  <CustomerField
+                    id="company-name"
+                    label="Hotel / Company Name"
+                    required
+                    maxLength={180}
+                    value={customer.companyName}
+                    onChange={(value) =>
+                      updateCustomer(
+                        "companyName",
+                        value
+                      )
+                    }
+                    autoComplete="organization"
+                    placeholder="Hotel or company name"
+                  />
+
+                  <CustomerField
+                    id="customer-email"
+                    label="Email Address"
+                    type="email"
+                    required
+                    maxLength={254}
+                    value={customer.email}
+                    onChange={(value) =>
+                      updateCustomer(
+                        "email",
+                        value
+                      )
+                    }
+                    autoComplete="email"
+                    placeholder="name@company.com"
+                  />
+
+                  <CustomerField
+                    id="customer-phone"
+                    label="Phone / WhatsApp Number"
+                    type="tel"
+                    maxLength={40}
+                    value={customer.phone}
+                    onChange={(value) =>
+                      updateCustomer(
+                        "phone",
+                        value
+                      )
+                    }
+                    autoComplete="tel"
+                    placeholder="Include country code"
+                  />
+
+                  <div className="text-left">
+                    <label
+                      htmlFor="destination"
+                      className="form-label"
+                    >
+                      Delivery Destination *
+                    </label>
+
+                    <select
+                      id="destination"
+                      name="destination"
+                      required
+                      value={customer.destination}
+                      onChange={(event) =>
+                        updateCustomer(
+                          "destination",
+                          event.target.value
+                        )
+                      }
+                      className="form-select"
+                    >
+                      <option
+                        value=""
+                        disabled
+                      >
+                        Select destination
+                      </option>
+
+                      <option value="Maldives">
+                        Maldives
+                      </option>
+
+                      <option value="Seychelles">
+                        Seychelles
+                      </option>
+
+                      <option value="Sri Lanka">
+                        Sri Lanka
+                      </option>
+
+                      <option value="Other">
+                        Other / To Be Discussed
+                      </option>
+                    </select>
+                  </div>
+
+                  <CustomerField
+                    id="delivery-date"
+                    label="Required Delivery Date"
+                    type="date"
+                    value={
+                      customer.requiredDeliveryDate
+                    }
+                    onChange={(value) =>
+                      updateCustomer(
+                        "requiredDeliveryDate",
+                        value
+                      )
+                    }
+                  />
+
+                  {customer.destination === "Other" && (
+                    <div className="sm:col-span-2">
+                      <CustomerField
+                        id="other-destination"
+                        label="Specify Delivery Destination"
+                        required
+                        maxLength={160}
+                        value={
+                          customer.otherDestination
+                        }
+                        onChange={(value) =>
+                          updateCustomer(
+                            "otherDestination",
+                            value
+                          )
+                        }
+                        placeholder="Enter country or destination"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-6 text-left">
+                  <label
+                    htmlFor="enquiry-message"
+                    className="form-label"
+                  >
+                    Additional Enquiry Details
+                  </label>
+
+                  <textarea
+                    id="enquiry-message"
+                    name="enquiry-message"
+                    rows={5}
+                    maxLength={3000}
+                    value={customer.message}
+                    onChange={(event) =>
+                      updateCustomer(
+                        "message",
+                        event.target.value
+                      )
+                    }
+                    placeholder="Project requirements, delivery instructions or other details..."
+                    className="form-textarea"
+                  />
+                </div>
+
+                {/* HONEYPOT */}
+
+                <div
+                  aria-hidden="true"
+                  className="absolute -left-[9999px] h-px w-px overflow-hidden"
+                >
+                  <label htmlFor="website-field">
+                    Leave this field empty
+                  </label>
+
+                  <input
+                    id="website-field"
+                    name="website"
+                    type="text"
+                    tabIndex={-1}
+                    autoComplete="off"
+                    value={customer.website}
+                    onChange={(event) =>
+                      updateCustomer(
+                        "website",
+                        event.target.value
+                      )
+                    }
+                  />
+                </div>
+
+                {/* TURNSTILE */}
+
+                <div className="mt-8">
+                  <QuotationTurnstile
+                    onTokenChange={
+                      setTurnstileToken
+                    }
+                    resetRef={
+                      resetTurnstileRef
+                    }
+                  />
+                </div>
+
+                {/* CONSENT */}
+
+                <div className="mt-7 rounded-lg border border-[#E4D7C4] bg-white p-5">
+                  <label className="flex items-start gap-3 text-left text-sm leading-7 text-[#30251F]">
+                    <input
+                      type="checkbox"
+                      required
+                      checked={customer.consent}
+                      onChange={(event) =>
+                        updateCustomer(
+                          "consent",
+                          event.target.checked
+                        )
+                      }
+                      className="mt-1 h-5 w-5 shrink-0 accent-[#B95016]"
+                    />
+
+                    <span>
+                      I agree that Bark Ornament
+                      may process the details
+                      provided to respond to
+                      this quotation enquiry.
+                      <span className="ml-1 text-[#B95016]">
+                        *
+                      </span>
+                    </span>
+                  </label>
+                </div>
+
+                {/* DEVELOPMENT NOTICE */}
+
+                <div className="mt-7 rounded-lg border border-[#D9C8B0] bg-white p-5 text-center">
+                  <p className="mb-2 font-semibold text-[#30251F]">
+                    Development Submission Testing
+                  </p>
+
+                  <p className="text-sm leading-7 text-[#74675E]">
+                    This form is connected to
+                    the quotation API. Real
+                    submissions are still
+                    disabled on the server,
+                    and unapproved demo products
+                    will be rejected.
+                  </p>
+                </div>
+
+                {/* ERROR FEEDBACK */}
+
+                {submissionStatus === "error" && (
+                  <div
+                    role="alert"
+                    className="mt-6 rounded-lg border border-red-200 bg-red-50 p-5 text-left"
+                  >
+                    <p className="font-semibold text-red-800">
+                      Enquiry not submitted
+                    </p>
+
+                    <p className="mt-2 text-sm leading-7 text-red-800">
+                      {submissionMessage}
+                    </p>
+
+                    {validationErrors.length > 0 && (
+                      <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-red-800">
+                        {validationErrors.map(
+                          (issue, index) => (
+                            <li key={index}>
+                              {issue}
+                            </li>
+                          )
+                        )}
+                      </ul>
+                    )}
+                  </div>
+                )}
+
+                {/* SUBMIT */}
+
+                <button
+                  type="submit"
+                  disabled={
+                    !isLoaded ||
+                    isEmpty ||
+                    isSubmitting ||
+                    !turnstileToken
+                  }
+                  className="mt-6 inline-flex min-h-12 w-full items-center justify-center rounded-md bg-[#B95016] px-7 py-4 text-sm font-bold text-white transition-colors hover:bg-[#963E10] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isSubmitting
+                    ? "Submitting Enquiry..."
+                    : "Submit Quotation Request"}
+                </button>
+
+                <p className="mt-4 text-center text-xs leading-6 text-[#74675E]">
+                  Do not enter sensitive
+                  personal information.
+                  This development form
+                  does not currently send
+                  confirmation emails.
+                </p>
+              </fieldset>
+            </form>
+          )}
+        </div>
+      </section>
+
+      {/* BOTTOM CTA */}
+
+      <section className="bg-[#30251F] px-5 py-16 text-center">
+        <div className="mx-auto max-w-2xl">
+          <h2 className="font-serif text-3xl text-[#FAF7F0]">
+            Explore More Hospitality Products
+          </h2>
+
+          <p className="mx-auto mt-5 text-base leading-8 text-[#E9DDC9]">
+            Continue browsing our
+            hospitality product collections.
+          </p>
+
+          <Link
+            href="/products"
+            className="btn btn-primary mt-7"
+          >
+            Browse Product Catalogue →
+          </Link>
+        </div>
+      </section>
+    </>
+  );
+}

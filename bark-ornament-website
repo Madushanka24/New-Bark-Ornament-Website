@@ -1,0 +1,563 @@
+[1mdiff --git a/src/app/products/CatalogueClient.tsx b/src/app/products/CatalogueClient.tsx[m
+[1mindex c6c690e..7075132 100644[m
+[1m--- a/src/app/products/CatalogueClient.tsx[m
+[1m+++ b/src/app/products/CatalogueClient.tsx[m
+[36m@@ -8,8 +8,8 @@[m [mimport { useEffect, useMemo, useState } from "react";[m
+ import Link from "next/link";[m
+ [m
+ import {[m
+[31m-  productCategories,[m
+[31m-  products,[m
+[32m+[m[32m  productCategories as localProductCategories,[m
+[32m+[m[32m  products as localProducts,[m
+   sortProducts,[m
+   type Product,[m
+   type ProductCategory,[m
+[36m@@ -18,9 +18,16 @@[m [mimport {[m
+ [m
+ /* ==========================================[m
+    BARK ORNAMENT - PRODUCT CATALOGUE[m
+[31m-   File: src/app/products/page.tsx[m
+[32m+[m[32m   File: src/app/products/CatalogueClient.tsx[m
+    Theme: Golden Coastal Luxury[m
+ [m
+[32m+[m[32m   FILE 150 STEP E7M:[m
+[32m+[m[32m   - Accept optional server-provided products[m
+[32m+[m[32m   - Accept optional server-provided categories[m
+[32m+[m[32m   - Preserve original local data fallback[m
+[32m+[m[32m   - Keep existing catalogue functionality[m
+[32m+[m[32m   - Do not activate public CMS integration[m
+[32m+[m
+    UI FIX 05:[m
+    - Removed duplicate quotation CTA[m
+    - Preserved shared footer quotation CTA[m
+[36m@@ -32,18 +39,30 @@[m [mimport {[m
+    category cards and product cards preserved.[m
+    ========================================== */[m
+ [m
+[31m-const categoryOptions = [[m
+[31m-  { label: "All Categories", value: "all" },[m
+[31m-  ...productCategories.map((item) => ({[m
+[31m-    label: item.name,[m
+[31m-    value: item.slug,[m
+[31m-  })),[m
+[31m-];[m
+[32m+[m[32m/* ==========================================[m
+[32m+[m[32m   SERVER DATA CONTRACT[m
+[32m+[m[32m   ========================================== */[m
+ [m
+[31m-function validCategory(value: string | null): string {[m
+[32m+[m[32mexport type CatalogueClientProps = {[m
+[32m+[m[32m  catalogueProducts?: readonly Product[];[m
+[32m+[m[32m  catalogueCategories?: readonly ProductCategory[];[m
+[32m+[m[32m};[m
+[32m+[m
+[32m+[m[32m/*[m
+[32m+[m[32m * Validate a category against the active[m
+[32m+[m[32m * category collection.[m
+[32m+[m[32m *[m
+[32m+[m[32m * The active collection may come from the[m
+[32m+[m[32m * existing local registry or, later, from[m
+[32m+[m[32m * the validated server-side CMS bridge.[m
+[32m+[m[32m */[m
+[32m+[m[32mfunction validCategory([m
+[32m+[m[32m  value: string | null,[m
+[32m+[m[32m  categories: readonly ProductCategory[][m
+[32m+[m[32m): string {[m
+   if ([m
+     value &&[m
+[31m-    productCategories.some((item) => item.slug === value)[m
+[32m+[m[32m    categories.some((item) => item.slug === value)[m
+   ) {[m
+     return value;[m
+   }[m
+[36m@@ -100,6 +119,10 @@[m [mfunction PhotoPlaceholder({[m
+    Two working actions:[m
+    1. Visit dedicated category page[m
+    2. Filter the current catalogue[m
+[32m+[m
+[32m+[m[32m   FILE 150 E7M:[m
+[32m+[m[32m   Receives a category from the active[m
+[32m+[m[32m   category collection.[m
+    ========================================== */[m
+ [m
+ function CategoryCard({[m
+[36m@@ -176,14 +199,21 @@[m [mfunction CategoryCard({[m
+ /* ==========================================[m
+    PRODUCT CARD[m
+    Links to File 8[m
+[32m+[m
+[32m+[m[32m   FILE 150 E7M:[m
+[32m+[m[32m   Resolve the category label from the[m
+[32m+[m[32m   active category collection rather than[m
+[32m+[m[32m   only from the local registry.[m
+    ========================================== */[m
+ [m
+ function ProductCard({[m
+   product,[m
+[32m+[m[32m  categories,[m
+ }: {[m
+   product: Product;[m
+[32m+[m[32m  categories: readonly ProductCategory[];[m
+ }) {[m
+[31m-  const category = productCategories.find([m
+[32m+[m[32m  const category = categories.find([m
+     (item) => item.slug === product.categorySlug[m
+   );[m
+ [m
+[36m@@ -232,17 +262,69 @@[m [mfunction ProductCard({[m
+ }[m
+ [m
+ /* ==========================================[m
+[31m-   MAIN CATALOGUE PAGE[m
+[32m+[m[32m   MAIN CATALOGUE CLIENT[m
+[32m+[m
+[32m+[m[32m   Server-provided data is optional.[m
+[32m+[m
+[32m+[m[32m   Without props, preserve the original[m
+[32m+[m[32m   local products and categories exactly.[m
+[32m+[m
+[32m+[m[32m   With props, use the validated catalogue[m
+[32m+[m[32m   supplied by the future server wrapper.[m
+[32m+[m
+[32m+[m[32m   Do not import server-only Sanity readers[m
+[32m+[m[32m   into this Client Component.[m
+    ========================================== */[m
+ [m
+[31m-export default function ProductsPage() {[m
+[32m+[m[32mexport default function CatalogueClient({[m
+[32m+[m[32m  catalogueProducts,[m
+[32m+[m[32m  catalogueCategories,[m
+[32m+[m[32m}: CatalogueClientProps) {[m
+[32m+[m[32m  const activeProducts =[m
+[32m+[m[32m    catalogueProducts ?? localProducts;[m
+[32m+[m
+[32m+[m[32m  const activeCategories =[m
+[32m+[m[32m    catalogueCategories ?? localProductCategories;[m
+[32m+[m
+[32m+[m[32m  /*[m
+[32m+[m[32m   * Category dropdown options must be[m
+[32m+[m[32m   * derived from the active categories.[m
+[32m+[m[32m   */[m
+[32m+[m[32m  const categoryOptions = useMemo([m
+[32m+[m[32m    () => [[m
+[32m+[m[32m      {[m
+[32m+[m[32m        label: "All Categories",[m
+[32m+[m[32m        value: "all",[m
+[32m+[m[32m      },[m
+[32m+[m[32m      ...activeCategories.map((item) => ({[m
+[32m+[m[32m        label: item.name,[m
+[32m+[m[32m        value: item.slug,[m
+[32m+[m[32m      })),[m
+[32m+[m[32m    ],[m
+[32m+[m[32m    [activeCategories][m
+[32m+[m[32m  );[m
+[32m+[m
+   const [search, setSearch] = useState("");[m
+   const [category, setCategory] = useState("all");[m
+[31m-  const [sort, setSort] = useState<ProductSort>("name-asc");[m
+[31m-  const [showPreviews, setShowPreviews] = useState(true);[m
+[32m+[m[32m  const [sort, setSort] =[m
+[32m+[m[32m    useState<ProductSort>("name-asc");[m
+[32m+[m
+[32m+[m[32m  /*[m
+[32m+[m[32m   * Preserve the original development[m
+[32m+[m[32m   * preview behavior when using local data.[m
+[32m+[m[32m   *[m
+[32m+[m[32m   * Future server-provided catalogues will[m
+[32m+[m[32m   * control which records are supplied.[m
+[32m+[m[32m   */[m
+[32m+[m[32m  const [showPreviews, setShowPreviews] =[m
+[32m+[m[32m    useState(true);[m
+[32m+[m
+[32m+[m[32m  /* ========================================[m
+[32m+[m[32m     READ CATEGORY FROM BROWSER URL[m
+ [m
+[31m-  /* Read category from browser URL.[m
+[31m-     Recheck when navigating Back or Forward. */[m
+[32m+[m[32m     Recheck when navigating Back/Forward[m
+[32m+[m[32m     or when active categories change.[m
+[32m+[m[32m     ======================================== */[m
+ [m
+   useEffect(() => {[m
+     function syncCategoryFromURL() {[m
+[36m@@ -250,7 +332,12 @@[m [mexport default function ProductsPage() {[m
+         window.location.search[m
+       );[m
+ [m
+[31m-      setCategory(validCategory(params.get("category")));[m
+[32m+[m[32m      setCategory([m
+[32m+[m[32m        validCategory([m
+[32m+[m[32m          params.get("category"),[m
+[32m+[m[32m          activeCategories[m
+[32m+[m[32m        )[m
+[32m+[m[32m      );[m
+     }[m
+ [m
+     syncCategoryFromURL();[m
+[36m@@ -266,21 +353,31 @@[m [mexport default function ProductsPage() {[m
+         syncCategoryFromURL[m
+       );[m
+     };[m
+[31m-  }, []);[m
+[32m+[m[32m  }, [activeCategories]);[m
+ [m
+[31m-  /* Update filter and URL together. */[m
+[32m+[m[32m  /* ========================================[m
+[32m+[m[32m     UPDATE FILTER AND URL TOGETHER[m
+[32m+[m[32m     ======================================== */[m
+ [m
+   function selectCategory(slug: string) {[m
+[31m-    const nextCategory = validCategory(slug);[m
+[32m+[m[32m    const nextCategory = validCategory([m
+[32m+[m[32m      slug,[m
+[32m+[m[32m      activeCategories[m
+[32m+[m[32m    );[m
+ [m
+     setCategory(nextCategory);[m
+ [m
+[31m-    const url = new URL(window.location.href);[m
+[32m+[m[32m    const url = new URL([m
+[32m+[m[32m      window.location.href[m
+[32m+[m[32m    );[m
+ [m
+     if (nextCategory === "all") {[m
+       url.searchParams.delete("category");[m
+     } else {[m
+[31m-      url.searchParams.set("category", nextCategory);[m
+[32m+[m[32m      url.searchParams.set([m
+[32m+[m[32m        "category",[m
+[32m+[m[32m        nextCategory[m
+[32m+[m[32m      );[m
+     }[m
+ [m
+     window.history.replaceState([m
+[36m@@ -312,65 +409,98 @@[m [mexport default function ProductsPage() {[m
+ [m
+   /* ========================================[m
+      FILTER AND SORT PRODUCT RESULTS[m
+[32m+[m
+[32m+[m[32m     All searches and filters now use[m
+[32m+[m[32m     the active product and category data.[m
+      ======================================== */[m
+ [m
+   const filteredProducts = useMemo(() => {[m
+[31m-    const query = search.trim().toLowerCase();[m
+[31m-[m
+[31m-    const source = products.filter((product) =>[m
+[31m-      showPreviews[m
+[31m-        ? true[m
+[31m-        : product.status === "published" &&[m
+[31m-          !product.isDemo[m
+[32m+[m[32m    const query =[m
+[32m+[m[32m      search.trim().toLowerCase();[m
+[32m+[m
+[32m+[m[32m    const source = activeProducts.filter([m
+[32m+[m[32m      (product) =>[m
+[32m+[m[32m        showPreviews[m
+[32m+[m[32m          ? true[m
+[32m+[m[32m          : product.status === "published" &&[m
+[32m+[m[32m            !product.isDemo[m
+     );[m
+ [m
+[31m-    const matches = source.filter((product) => {[m
+[31m-      const productCategory = productCategories.find([m
+[31m-        (item) => item.slug === product.categorySlug[m
+[31m-      );[m
+[31m-[m
+[31m-      const matchesCategory =[m
+[31m-        category === "all" ||[m
+[31m-        product.categorySlug === category;[m
+[31m-[m
+[31m-      const searchableText = [[m
+[31m-        product.name,[m
+[31m-        product.shortDescription,[m
+[31m-        product.description,[m
+[31m-        productCategory?.name ?? "",[m
+[31m-        ...product.materials,[m
+[31m-        ...product.sizes,[m
+[31m-        ...product.finishes,[m
+[31m-      ][m
+[31m-        .join(" ")[m
+[31m-        .toLowerCase();[m
+[31m-[m
+[31m-      const matchesSearch =[m
+[31m-        query === "" || searchableText.includes(query);[m
+[32m+[m[32m    const matches = source.filter([m
+[32m+[m[32m      (product) => {[m
+[32m+[m[32m        const productCategory =[m
+[32m+[m[32m          activeCategories.find([m
+[32m+[m[32m            (item) =>[m
+[32m+[m[32m              item.slug === product.categorySlug[m
+[32m+[m[32m          );[m
+[32m+[m
+[32m+[m[32m        const matchesCategory =[m
+[32m+[m[32m          category === "all" ||[m
+[32m+[m[32m          product.categorySlug === category;[m
+[32m+[m
+[32m+[m[32m        const searchableText = [[m
+[32m+[m[32m          product.name,[m
+[32m+[m[32m          product.shortDescription,[m
+[32m+[m[32m          product.description,[m
+[32m+[m[32m          productCategory?.name ?? "",[m
+[32m+[m[32m          ...product.materials,[m
+[32m+[m[32m          ...product.sizes,[m
+[32m+[m[32m          ...product.finishes,[m
+[32m+[m[32m        ][m
+[32m+[m[32m          .join(" ")[m
+[32m+[m[32m          .toLowerCase();[m
+[32m+[m
+[32m+[m[32m        const matchesSearch =[m
+[32m+[m[32m          query === "" ||[m
+[32m+[m[32m          searchableText.includes(query);[m
+[32m+[m
+[32m+[m[32m        return ([m
+[32m+[m[32m          matchesCategory &&[m
+[32m+[m[32m          matchesSearch[m
+[32m+[m[32m        );[m
+[32m+[m[32m      }[m
+[32m+[m[32m    );[m
+ [m
+[31m-      return matchesCategory && matchesSearch;[m
+[31m-    });[m
+[32m+[m[32m    return sortProducts([m
+[32m+[m[32m      matches,[m
+[32m+[m[32m      sort[m
+[32m+[m[32m    );[m
+[32m+[m[32m  }, [[m
+[32m+[m[32m    search,[m
+[32m+[m[32m    category,[m
+[32m+[m[32m    sort,[m
+[32m+[m[32m    showPreviews,[m
+[32m+[m[32m    activeProducts,[m
+[32m+[m[32m    activeCategories,[m
+[32m+[m[32m  ]);[m
+ [m
+[31m-    return sortProducts(matches, sort);[m
+[31m-  }, [search, category, sort, showPreviews]);[m
+[32m+[m[32m  /* ========================================[m
+[32m+[m[32m     FILTER VISIBLE CATEGORY CARDS[m
+[32m+[m[32m     ======================================== */[m
+ [m
+   const visibleCategories = useMemo(() => {[m
+[31m-    const query = search.trim().toLowerCase();[m
+[32m+[m[32m    const query =[m
+[32m+[m[32m      search.trim().toLowerCase();[m
+ [m
+     if (!query) {[m
+[31m-      return productCategories;[m
+[32m+[m[32m      return activeCategories;[m
+     }[m
+ [m
+[31m-    return productCategories.filter((item) =>[m
+[31m-      `${item.name} ${item.description}`[m
+[31m-        .toLowerCase()[m
+[31m-        .includes(query)[m
+[32m+[m[32m    return activeCategories.filter([m
+[32m+[m[32m      (item) =>[m
+[32m+[m[32m        `${item.name} ${item.description}`[m
+[32m+[m[32m          .toLowerCase()[m
+[32m+[m[32m          .includes(query)[m
+[32m+[m[32m    );[m
+[32m+[m[32m  }, [[m
+[32m+[m[32m    search,[m
+[32m+[m[32m    activeCategories,[m
+[32m+[m[32m  ]);[m
+[32m+[m
+[32m+[m[32m  const selectedCategory =[m
+[32m+[m[32m    activeCategories.find([m
+[32m+[m[32m      (item) => item.slug === category[m
+     );[m
+[31m-  }, [search]);[m
+[31m-[m
+[31m-  const selectedCategory = productCategories.find([m
+[31m-    (item) => item.slug === category[m
+[31m-  );[m
+ [m
+   const hasFilters =[m
+     search.trim() !== "" ||[m
+[36m@@ -414,11 +544,20 @@[m [mexport default function ProductsPage() {[m
+             aria-label="Breadcrumb"[m
+             className="mt-8 flex justify-center gap-2 text-sm text-[#E9DDC9]"[m
+           >[m
+[31m-            <Link href="/" className="hover:underline">[m
+[32m+[m[32m            <Link[m
+[32m+[m[32m              href="/"[m
+[32m+[m[32m              className="hover:underline"[m
+[32m+[m[32m            >[m
+               Home[m
+             </Link>[m
+[31m-            <span aria-hidden="true">/</span>[m
+[31m-            <span aria-current="page">Products</span>[m
+[32m+[m
+[32m+[m[32m            <span aria-hidden="true">[m
+[32m+[m[32m              /[m
+[32m+[m[32m            </span>[m
+[32m+[m
+[32m+[m[32m            <span aria-current="page">[m
+[32m+[m[32m              Products[m
+[32m+[m[32m            </span>[m
+           </nav>[m
+         </div>[m
+       </section>[m
+[36m@@ -430,7 +569,9 @@[m [mexport default function ProductsPage() {[m
+       <section className="border-b border-[#E4D7C4] bg-[#FAF7F0] px-5 py-12">[m
+         <div className="mx-auto max-w-[1200px]">[m
+           <div className="mb-8 text-center">[m
+[31m-            <p className="eyebrow">Catalogue Search</p>[m
+[32m+[m[32m            <p className="eyebrow">[m
+[32m+[m[32m              Catalogue Search[m
+[32m+[m[32m            </p>[m
+ [m
+             <h2 className="font-serif text-3xl text-[#30251F]">[m
+               Find a Product[m
+[36m@@ -470,18 +611,22 @@[m [mexport default function ProductsPage() {[m
+                 id="category-filter"[m
+                 value={category}[m
+                 onChange={(event) =>[m
+[31m-                  selectCategory(event.target.value)[m
+[32m+[m[32m                  selectCategory([m
+[32m+[m[32m                    event.target.value[m
+[32m+[m[32m                  )[m
+                 }[m
+                 className="h-12 w-full rounded-md border border-[#D9C8B0] bg-white px-3 text-sm text-[#30251F] focus:border-[#B95016] focus:outline-none focus:ring-2 focus:ring-[#B95016]/20"[m
+               >[m
+[31m-                {categoryOptions.map((option) => ([m
+[31m-                  <option[m
+[31m-                    key={option.value}[m
+[31m-                    value={option.value}[m
+[31m-                  >[m
+[31m-                    {option.label}[m
+[31m-                  </option>[m
+[31m-                ))}[m
+[32m+[m[32m                {categoryOptions.map([m
+[32m+[m[32m                  (option) => ([m
+[32m+[m[32m                    <option[m
+[32m+[m[32m                      key={option.value}[m
+[32m+[m[32m                      value={option.value}[m
+[32m+[m[32m                    >[m
+[32m+[m[32m                      {option.label}[m
+[32m+[m[32m                    </option>[m
+[32m+[m[32m                  )[m
+[32m+[m[32m                )}[m
+               </select>[m
+             </div>[m
+ [m
+[36m@@ -506,6 +651,7 @@[m [mexport default function ProductsPage() {[m
+                 <option value="name-asc">[m
+                   Name: A to Z[m
+                 </option>[m
+[32m+[m
+                 <option value="name-desc">[m
+                   Name: Z to A[m
+                 </option>[m
+[36m@@ -519,10 +665,13 @@[m [mexport default function ProductsPage() {[m
+                 type="checkbox"[m
+                 checked={showPreviews}[m
+                 onChange={(event) =>[m
+[31m-                  setShowPreviews(event.target.checked)[m
+[32m+[m[32m                  setShowPreviews([m
+[32m+[m[32m                    event.target.checked[m
+[32m+[m[32m                  )[m
+                 }[m
+                 className="h-5 w-5 accent-[#B95016]"[m
+               />[m
+[32m+[m
+               Show development product previews[m
+             </label>[m
+ [m
+[36m@@ -566,14 +715,20 @@[m [mexport default function ProductsPage() {[m
+ [m
+           {visibleCategories.length > 0 ? ([m
+             <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">[m
+[31m-              {visibleCategories.map((item) => ([m
+[31m-                <CategoryCard[m
+[31m-                  key={item.slug}[m
+[31m-                  category={item}[m
+[31m-                  selected={category === item.slug}[m
+[31m-                  onFilter={filterFromCard}[m
+[31m-                />[m
+[31m-              ))}[m
+[32m+[m[32m              {visibleCategories.map([m
+[32m+[m[32m                (item) => ([m
+[32m+[m[32m                  <CategoryCard[m
+[32m+[m[32m                    key={item.slug}[m
+[32m+[m[32m                    category={item}[m
+[32m+[m[32m                    selected={[m
+[32m+[m[32m                      category === item.slug[m
+[32m+[m[32m                    }[m
+[32m+[m[32m                    onFilter={[m
+[32m+[m[32m                      filterFromCard[m
+[32m+[m[32m                    }[m
+[32m+[m[32m                  />[m
+[32m+[m[32m                )[m
+[32m+[m[32m              )}[m
+             </div>[m
+           ) : ([m
+             <div className="rounded-xl bg-white p-10 text-center">[m
+[36m@@ -587,7 +742,9 @@[m [mexport default function ProductsPage() {[m
+             <div className="mt-10 text-center">[m
+               <button[m
+                 type="button"[m
+[31m-                onClick={() => selectCategory("all")}[m
+[32m+[m[32m                onClick={() =>[m
+[32m+[m[32m                  selectCategory("all")[m
+[32m+[m[32m                }[m
+                 className="btn btn-secondary"[m
+               >[m
+                 View All Categories[m
+[36m@@ -628,7 +785,10 @@[m [mexport default function ProductsPage() {[m
+                 className="mt-5 inline-flex min-h-11 items-center gap-2 text-sm font-bold text-[#B95016] hover:underline"[m
+               >[m
+                 Open Complete Category Page[m
+[31m-                <span aria-hidden="true">→</span>[m
+[32m+[m
+[32m+[m[32m                <span aria-hidden="true">[m
+[32m+[m[32m                  →[m
+[32m+[m[32m                </span>[m
+               </Link>[m
+             )}[m
+           </div>[m
+[36m@@ -646,12 +806,17 @@[m [mexport default function ProductsPage() {[m
+ [m
+           {filteredProducts.length > 0 ? ([m
+             <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">[m
+[31m-              {filteredProducts.map((product) => ([m
+[31m-                <ProductCard[m
+[31m-                  key={product.id}[m
+[31m-                  product={product}[m
+[31m-                />[m
+[31m-              ))}[m
+[32m+[m[32m              {filteredProducts.map([m
+[32m+[m[32m                (product) => ([m
+[32m+[m[32m                  <ProductCard[m
+[32m+[m[32m                    key={product.id}[m
+[32m+[m[32m                    product={product}[m
+[32m+[m[32m                    categories={[m
+[32m+[m[32m                      activeCategories[m
+[32m+[m[32m                    }[m
+[32m+[m[32m                  />[m
+[32m+[m[32m                )[m
+[32m+[m[32m              )}[m
+             </div>[m
+           ) : ([m
+             <div className="mx-auto max-w-xl rounded-xl border border-[#E4D7C4] bg-white px-6 py-12 text-center">[m
+[36m@@ -677,7 +842,9 @@[m [mexport default function ProductsPage() {[m
+               {!showPreviews && ([m
+                 <button[m
+                   type="button"[m
+[31m-                  onClick={() => setShowPreviews(true)}[m
+[32m+[m[32m                  onClick={() =>[m
+[32m+[m[32m                    setShowPreviews(true)[m
+[32m+[m[32m                  }[m
+                   className="btn btn-secondary mt-4 ml-2"[m
+                 >[m
+                   Show Development Previews[m
+[36m@@ -707,7 +874,6 @@[m [mexport default function ProductsPage() {[m
+           Product listings transition[m
+           directly to the existing footer.[m
+           ==================================== */}[m
+[31m-[m
+     </>[m
+   );[m
+ }[m
