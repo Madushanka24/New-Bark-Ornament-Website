@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 export const metadata: Metadata = {
-  title: "Insights | News, Knowledge & Downloads | Bark Ornament",
+  title: "Insights | News, Knowledge & Downloads",
   description:
     "Explore hospitality product knowledge, printing and material guides, company updates and downloadable resource collections from Bark Ornament (Pvt) Ltd.",
 };
@@ -223,7 +223,7 @@ function InsightsArtwork() {
 
 export default function InsightsPage() {
   return (
-    <main className="bg-[#FAF7F0] text-[#30251F]">
+    <div className="bg-[#FAF7F0] text-[#30251F]">
 
       {/* =====================================
           1. HERO
@@ -794,6 +794,6 @@ export default function InsightsPage() {
           </p>
         </div>
       </section>
-    </main>
+    </div>
   );
 }

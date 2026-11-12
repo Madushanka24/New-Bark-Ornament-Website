@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 export const metadata: Metadata = {
-  title: "News & Updates | Bark Ornament Insights",
+  title: "News & Updates | Insights",
   description:
     "Explore Bark Ornament's news categories and a dedicated space for verified company announcements, product developments and hospitality market updates.",
 };
@@ -190,7 +190,7 @@ function NewsArtwork() {
 
 export default function NewsPage() {
   return (
-    <main className="bg-[#FAF7F0] text-[#30251F]">
+    <div className="bg-[#FAF7F0] text-[#30251F]">
       {/* 1. HERO */}
       <section
         aria-labelledby="news-title"
@@ -655,6 +655,6 @@ export default function NewsPage() {
           </p>
         </div>
       </section>
-    </main>
+    </div>
   );
 }

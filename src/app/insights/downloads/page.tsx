@@ -9,7 +9,7 @@ import {
 } from "@/lib/sanity-pdf-publications";
 
 export const metadata: Metadata = {
-  title: "Downloads & Resources | Bark Ornament Insights",
+  title: "Downloads & Resources | Insights",
   description:
     "Explore Bark Ornament's resource library for Knowledge Series magazines, hospitality product catalogues, company profiles and technical guides.",
 };
@@ -445,7 +445,7 @@ function DownloadsLoadingSection() {
 
 export default function DownloadsPage() {
   return (
-    <main className="bg-[#FAF7F0] text-[#30251F]">
+    <div className="bg-[#FAF7F0] text-[#30251F]">
       {/* 1. HERO */}
       <section
         aria-labelledby="downloads-title"
@@ -896,6 +896,6 @@ export default function DownloadsPage() {
           </p>
         </div>
       </section>
-    </main>
+    </div>
   );
 }

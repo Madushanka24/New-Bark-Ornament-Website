@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 export const metadata: Metadata = {
-  title: "Contact Us | Bark Ornament",
+  title: "Contact Us",
   description:
     "Contact Bark Ornament (Pvt) Ltd about customised hospitality products, printed materials, packaging, crafts and guest presentation requirements.",
 };
@@ -18,6 +18,10 @@ export const metadata: Metadata = {
  * - Corrected hero heading visibility.
  * - Corrected bottom CTA heading visibility.
  * - Updated primary buttons to brand orange.
+ *
+ * FILE 184:
+ * - Avoid nested main landmarks.
+ * - Prevent duplicate branding in page title.
  *
  * The enquiry email below was supplied in earlier
  * Bark Ornament marketing material. Confirm that it
@@ -180,7 +184,7 @@ function ContactArtwork() {
 
 export default function ContactPage() {
   return (
-    <main className="bg-[#FAF7F0] text-[#30251F]">
+    <div className="bg-[#FAF7F0] text-[#30251F]">
       {/* =====================================
           1. HERO
           ===================================== */}
@@ -666,6 +670,6 @@ export default function ContactPage() {
           </p>
         </div>
       </section>
-    </main>
+    </div>
   );
 }

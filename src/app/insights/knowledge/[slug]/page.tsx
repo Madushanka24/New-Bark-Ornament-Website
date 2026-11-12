@@ -90,7 +90,7 @@ export async function generateMetadata({
      * in a later, separately tested milestone.
      */
     return {
-      title: "Knowledge Article | Bark Ornament",
+      title: "Knowledge Article",
       description:
         "Hospitality product knowledge and educational resources from Bark Ornament.",
       robots: {
@@ -101,7 +101,7 @@ export async function generateMetadata({
   }
 
   return {
-    title: `${article.title} | Bark Ornament`,
+    title: article.title,
     description: article.description,
     robots: {
       index: false,
@@ -279,7 +279,7 @@ function CmsKnowledgeArticleView({
     : null;
 
   return (
-    <main className="bg-[#FAF7F0] text-[#30251F]">
+    <div className="bg-[#FAF7F0] text-[#30251F]">
       {/* APPROVED ARTICLE HERO */}
       <section
         aria-labelledby="cms-article-title"
@@ -399,7 +399,7 @@ function CmsKnowledgeArticleView({
           </div>
         </div>
       </section>
-    </main>
+    </div>
   );
 }
 
@@ -436,7 +436,7 @@ async function KnowledgeArticleContent({
   }
 
   return (
-    <main className="bg-[#FAF7F0] text-[#30251F]">
+    <div className="bg-[#FAF7F0] text-[#30251F]">
       {/* 1. ARTICLE HERO */}
       <section
         aria-labelledby="article-title"
@@ -1100,7 +1100,7 @@ async function KnowledgeArticleContent({
           </p>
         </div>
       </section>
-    </main>
+    </div>
   );
 }
 
@@ -1116,7 +1116,7 @@ export default function KnowledgeArticlePage({
   return (
     <Suspense
       fallback={
-        <main className="min-h-[60vh] bg-[#FAF7F0] px-5 py-20 text-[#30251F] sm:px-8">
+        <div className="min-h-[60vh] bg-[#FAF7F0] px-5 py-20 text-[#30251F] sm:px-8">
           <div className="mx-auto max-w-7xl">
             <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#A94C19]">
               Bark Ornament Knowledge Series
@@ -1133,7 +1133,7 @@ export default function KnowledgeArticlePage({
               Loading knowledge article…
             </p>
           </div>
-        </main>
+        </div>
       }
     >
       <KnowledgeArticleContent params={params} />

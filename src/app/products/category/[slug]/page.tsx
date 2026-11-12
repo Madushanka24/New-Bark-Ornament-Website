@@ -1,8 +1,19 @@
-
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { Suspense } from "react";
+
+import ApprovedProductImage, {
+  type ApprovedPhoto,
+} from "@/components/ApprovedProductImage";
+
+import {
+  getApprovedProductMainImage,
+} from "@/lib/approved-product-images";
+
+import {
+  getSanityProductMainImages,
+} from "@/lib/sanity-product-photography";
 
 import {
   productCategories,
@@ -15,34 +26,32 @@ import {
 } from "@/lib/catalogue-cms-bridge";
 
 /**
- * BARK ORNAMENT — FILE 150 STEP E8G
+ * BARK ORNAMENT — FILE 163 STEP F40
  *
  * CATEGORY PRODUCT LISTING PAGE
  * Theme: Golden Coastal Luxury
  *
- * CMS INTEGRATION
- * - Preserve existing local categories.
- * - Preserve development previews only
- *   in local development mode.
- * - Use the guarded CMS catalogue bridge.
- * - Reject unpublished CMS products.
- * - Preserve existing product URLs.
+ * FILE 163
+ * - Set the correct editorial category canonical.
+ * - Preserve noindex/nofollow for this
+ *   secondary product-listing route.
  *
- * NEXT.JS 16
- * - URL-dependent content stays in an
- *   asynchronous child component.
- * - Preserve the Suspense boundary.
- * - Preserve existing static category paths.
+ * EXISTING FUNCTIONALITY PRESERVED
+ * - CMS-approved category product records.
+ * - Local development product previews.
+ * - Production draft/demo exclusion.
+ * - Approved Sanity product photography.
+ * - Approved local photograph fallback.
+ * - Original missing-photo placeholder.
+ * - Category links and product navigation.
+ * - Next.js 16 Suspense boundary.
+ * - Existing layout and brand colours.
  *
- * PUBLICATION SAFETY
+ * SAFETY
  * - CMS publication is not enabled here.
- * - Production excludes local drafts and
- *   demonstration products even when the
- *   CMS publication flag is disabled.
- * - CMS failure uses published, non-demo
- *   local product records.
- * - Category metadata remains noindex.
- * - Quotation functionality is unchanged.
+ * - No new database operations.
+ * - No quotation or email changes.
+ * - No production deployment changes.
  */
 
 type CategoryPageProps = {
@@ -53,10 +62,6 @@ type CategoryPageProps = {
 
 /* ==========================================
    STATIC CATEGORY ROUTES
-
-   Preserve the ten original local routes.
-   Other approved CMS categories can be
-   resolved dynamically in the future.
    ========================================== */
 
 export function generateStaticParams() {
@@ -67,23 +72,6 @@ export function generateStaticParams() {
 
 /* ==========================================
    CATEGORY DATA RESOLUTION
-
-   CMS publication is controlled by the
-   existing server-side environment flag.
-
-   LOCAL DEVELOPMENT, CMS OFF:
-   - Preserve demonstration listings.
-   - Preserve existing category data.
-
-   PRODUCTION, CMS OFF:
-   - Preserve local category information.
-   - Show published, non-demo products only.
-
-   CMS PUBLICATION ON:
-   - Use eligible CMS catalogue records.
-   - Require published, non-demo products.
-   - Fall back safely to published local
-     records if the bridge is unavailable.
    ========================================== */
 
 async function resolveCategoryPageData(
@@ -101,29 +89,12 @@ async function resolveCategoryPageData(
     process.env.CATALOGUE_CMS_PUBLIC_ENABLED ===
     "true";
 
-  /*
-   * Draft previews are permitted only
-   * when both conditions are satisfied:
-   *
-   * - The Next.js server is in development.
-   * - CMS publication has not been enabled.
-   *
-   * Disabling CMS does not authorize draft
-   * previews in a production build.
-   */
-
   const developmentPreviewAllowed =
     process.env.NODE_ENV === "development" &&
     !publicModeRequested;
 
   const snapshot =
     await getPublicCatalogueSnapshot();
-
-  /*
-   * Use CMS data only when explicitly
-   * requested and confirmed as enabled
-   * by the guarded catalogue bridge.
-   */
 
   const useCmsCatalogue =
     publicModeRequested && snapshot.cmsEnabled;
@@ -140,34 +111,18 @@ async function resolveCategoryPageData(
     return null;
   }
 
-  /*
-   * Resolve local records including drafts
-   * before applying the environment guard.
-   *
-   * This preserves development previews
-   * without allowing them into the public
-   * production response.
-   */
-
-  const localCategoryProducts = getProductsByCategory(
-    category.slug,
-    true
-  );
-
-  /*
-   * CMS catalogue:
-   * Published, non-demo CMS products only.
-   *
-   * Local fallback:
-   * - Development: preserve preview records.
-   * - Production: published, non-demo only.
-   */
+  const localCategoryProducts =
+    getProductsByCategory(
+      category.slug,
+      true
+    );
 
   const categoryProducts: readonly Product[] =
     useCmsCatalogue
       ? snapshot.products.filter(
           (product) =>
-            product.categorySlug === category.slug &&
+            product.categorySlug ===
+              category.slug &&
             product.status === "published" &&
             product.isDemo === false
         )
@@ -194,16 +149,30 @@ async function resolveCategoryPageData(
     categoryProducts,
     categoryNumber,
     otherCategories,
-    publicCatalogueMode: !developmentPreviewAllowed,
+    publicCatalogueMode:
+      !developmentPreviewAllowed,
   };
 }
 
 /* ==========================================
-   CATEGORY SEO METADATA
+   FILE 163 — CATEGORY SEO METADATA
 
-   Keep category listings out of indexes
-   until the complete CMS catalogue,
-   quotation and sitemap integrations pass.
+   The primary editorial category page is:
+
+   /categories/[slug]
+
+   This secondary product-listing page is:
+
+   /products/category/[slug]
+
+   Preserve noindex/nofollow.
+
+   Override the inherited /products canonical
+   so it points to the matching editorial
+   category page instead.
+
+   This does not change the global pre-launch
+   search-engine crawling restriction.
    ========================================== */
 
 export async function generateMetadata({
@@ -224,9 +193,25 @@ export async function generateMetadata({
     };
   }
 
+  const hasEditorialCategoryPage =
+    productCategories.some(
+      (item) =>
+        item.slug === resolved.category.slug
+    );
+
+  const canonicalPath = hasEditorialCategoryPage
+    ? `/categories/${resolved.category.slug}`
+    : `/products/category/${resolved.category.slug}`;
+
   return {
-    title: resolved.category.name,
-    description: resolved.category.description,
+    title: {
+      absolute: `${resolved.category.name} | Bark Ornament`,
+    },
+    description:
+      resolved.category.description,
+    alternates: {
+      canonical: canonicalPath,
+    },
     robots: {
       index: false,
       follow: false,
@@ -235,11 +220,78 @@ export async function generateMetadata({
 }
 
 /* ==========================================
-   CATEGORY PRODUCT IMAGE PLACEHOLDER
+   APPROVED CATEGORY PHOTOGRAPHY
 
-   Preserve the existing appearance.
-   Product-card photography is a separate
-   integration milestone.
+   DEVELOPMENT / CMS DISABLED:
+   - Approved photos may be loaded for
+     published, non-demo local products.
+   - Development preview products never
+     receive Sanity photographs.
+
+   PRODUCTION / CMS DISABLED:
+   - Do not request Sanity photographs unless
+     the independent photo setting is enabled.
+
+   CMS PUBLICATION ENABLED:
+   - Load photos for published, non-demo
+     products only.
+
+   Existing product publication rules
+   remain authoritative.
+   ========================================== */
+
+async function loadCategoryProductPhotos(
+  categoryProducts: readonly Product[]
+): Promise<
+  Readonly<Record<string, ApprovedPhoto>>
+> {
+  const cmsPublicationEnabled =
+    process.env.CATALOGUE_CMS_PUBLIC_ENABLED ===
+    "true";
+
+  const independentPhotosEnabled =
+    process.env.CATALOGUE_SANITY_PHOTOS_ENABLED ===
+    "true";
+
+  const localDevelopmentMode =
+    process.env.NODE_ENV === "development";
+
+  const photographyAllowed =
+    cmsPublicationEnabled ||
+    independentPhotosEnabled ||
+    localDevelopmentMode;
+
+  if (!photographyAllowed) {
+    return {};
+  }
+
+  const eligibleProductIds = [
+    ...new Set(
+      categoryProducts
+        .filter(
+          (product) =>
+            product.status === "published" &&
+            product.isDemo === false
+        )
+        .map((product) => product.id)
+    ),
+  ];
+
+  if (eligibleProductIds.length === 0) {
+    return {};
+  }
+
+  try {
+    return await getSanityProductMainImages(
+      eligibleProductIds
+    );
+  } catch {
+    return {};
+  }
+}
+
+/* ==========================================
+   ORIGINAL PRODUCT IMAGE PLACEHOLDER
    ========================================== */
 
 function ProductPlaceholder({
@@ -296,18 +348,54 @@ function ProductPlaceholder({
 /* ==========================================
    CATEGORY PRODUCT CARD
 
-   Preserve existing product links,
-   development labels and styling.
+   PHOTO PRIORITY
+   1. Approved Sanity primary image.
+   2. Approved local product image.
+   3. Original placeholder.
+
+   Preserve product navigation and
+   development preview labels.
    ========================================== */
 
 function CategoryProductCard({
   product,
+  sanityPhoto,
 }: {
   product: Product;
+  sanityPhoto: ApprovedPhoto | null;
 }) {
+  const productEligibleForPhotography =
+    product.status === "published" &&
+    product.isDemo === false;
+
+  const localPhoto =
+    productEligibleForPhotography
+      ? getApprovedProductMainImage(
+          product.slug
+        )
+      : null;
+
+  const approvedPhoto =
+    productEligibleForPhotography
+      ? sanityPhoto ?? localPhoto
+      : null;
+
   return (
     <article className="group flex h-full flex-col overflow-hidden rounded-xl border border-[#E4D7C4] bg-white text-center shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-lg motion-reduce:transform-none">
-      <ProductPlaceholder label={product.name} />
+      {approvedPhoto ? (
+        <ApprovedProductImage
+          label={product.name}
+          photo={approvedPhoto}
+          aspect="wide"
+          fit="contain"
+          sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+          className="min-h-[220px]"
+        />
+      ) : (
+        <ProductPlaceholder
+          label={product.name}
+        />
+      )}
 
       <div className="flex flex-1 flex-col items-center p-6">
         {product.isDemo && (
@@ -329,7 +417,9 @@ function CategoryProductCard({
           className="mt-7 inline-flex min-h-12 items-center justify-center gap-2 rounded-md bg-[#B95016] px-6 py-3 text-sm font-bold text-white transition-colors hover:bg-[#963E10] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#B95016]"
         >
           View Product Details
-          <span aria-hidden="true">→</span>
+          <span aria-hidden="true">
+            →
+          </span>
         </Link>
       </div>
     </article>
@@ -338,12 +428,6 @@ function CategoryProductCard({
 
 /* ==========================================
    CATEGORY DETAIL CONTENT
-
-   Keep the original layout and Suspense
-   architecture.
-
-   Only the source of category/product data
-   changes.
    ========================================== */
 
 async function CategoryDetailContent({
@@ -366,6 +450,11 @@ async function CategoryDetailContent({
     publicCatalogueMode,
   } = resolved;
 
+  const approvedProductPhotos =
+    await loadCategoryProductPhotos(
+      categoryProducts
+    );
+
   return (
     <>
       {/* ====================================
@@ -381,7 +470,10 @@ async function CategoryDetailContent({
         <div className="relative mx-auto max-w-4xl">
           <p className="mb-5 text-xs font-bold uppercase tracking-[0.2em] text-[#E3B65D]">
             Bark Ornament Collection{" "}
-            {String(categoryNumber).padStart(2, "0")}
+            {String(categoryNumber).padStart(
+              2,
+              "0"
+            )}
           </p>
 
           <h1
@@ -397,8 +489,6 @@ async function CategoryDetailContent({
             {category.description}
           </p>
 
-          {/* BREADCRUMB NAVIGATION */}
-
           <nav
             aria-label="Breadcrumb"
             className="mt-9"
@@ -413,7 +503,9 @@ async function CategoryDetailContent({
                 </Link>
               </li>
 
-              <li aria-hidden="true">/</li>
+              <li aria-hidden="true">
+                /
+              </li>
 
               <li>
                 <Link
@@ -424,7 +516,9 @@ async function CategoryDetailContent({
                 </Link>
               </li>
 
-              <li aria-hidden="true">/</li>
+              <li aria-hidden="true">
+                /
+              </li>
 
               <li
                 aria-current="page"
@@ -499,12 +593,19 @@ async function CategoryDetailContent({
 
           {categoryProducts.length > 0 ? (
             <div className="grid gap-7 sm:grid-cols-2 lg:grid-cols-3">
-              {categoryProducts.map((product) => (
-                <CategoryProductCard
-                  key={product.id}
-                  product={product}
-                />
-              ))}
+              {categoryProducts.map(
+                (product) => (
+                  <CategoryProductCard
+                    key={product.id}
+                    product={product}
+                    sanityPhoto={
+                      approvedProductPhotos[
+                        product.id
+                      ] ?? null
+                    }
+                  />
+                )
+              )}
             </div>
           ) : (
             <div className="mx-auto max-w-2xl rounded-xl border border-[#D9C8B0] bg-white px-6 py-14 text-center">
@@ -556,26 +657,28 @@ async function CategoryDetailContent({
           </div>
 
           <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-            {otherCategories.map((item) => (
-              <Link
-                key={item.slug}
-                href={`/products/category/${item.slug}`}
-                className="group flex min-h-44 flex-col items-center justify-center rounded-xl border border-[#E4D7C4] bg-white p-6 text-center transition-all duration-300 hover:-translate-y-1 hover:shadow-lg motion-reduce:transform-none"
-              >
-                <span
-                  aria-hidden="true"
-                  className="mb-5 h-1 w-12 rounded-full bg-[#C59A45]"
-                />
+            {otherCategories.map(
+              (item) => (
+                <Link
+                  key={item.slug}
+                  href={`/products/category/${item.slug}`}
+                  className="group flex min-h-44 flex-col items-center justify-center rounded-xl border border-[#E4D7C4] bg-white p-6 text-center transition-all duration-300 hover:-translate-y-1 hover:shadow-lg motion-reduce:transform-none"
+                >
+                  <span
+                    aria-hidden="true"
+                    className="mb-5 h-1 w-12 rounded-full bg-[#C59A45]"
+                  />
 
-                <h3 className="font-serif text-xl leading-snug text-[#30251F]">
-                  {item.name}
-                </h3>
+                  <h3 className="font-serif text-xl leading-snug text-[#30251F]">
+                    {item.name}
+                  </h3>
 
-                <span className="mt-5 text-sm font-bold text-[#B95016]">
-                  Explore Category →
-                </span>
-              </Link>
-            ))}
+                  <span className="mt-5 text-sm font-bold text-[#B95016]">
+                    Explore Category →
+                  </span>
+                </Link>
+              )
+            )}
           </div>
 
           <div className="mt-10 text-center">
@@ -584,7 +687,9 @@ async function CategoryDetailContent({
               className="btn btn-secondary"
             >
               View All Product Categories
-              <span aria-hidden="true">→</span>
+              <span aria-hidden="true">
+                →
+              </span>
             </Link>
           </div>
         </div>
@@ -640,7 +745,7 @@ export default function CategoryPage({
   return (
     <Suspense
       fallback={
-        <main className="min-h-screen bg-[#FAF7F0] text-[#30251F]">
+        <div className="min-h-screen bg-[#FAF7F0] text-[#30251F]">
           <section className="relative overflow-hidden bg-[#30251F] px-5 py-20 text-center text-[#FAF7F0] sm:py-24">
             <div
               aria-hidden="true"
@@ -669,7 +774,7 @@ export default function CategoryPage({
               </p>
             </div>
           </section>
-        </main>
+        </div>
       }
     >
       <CategoryDetailContent params={params} />

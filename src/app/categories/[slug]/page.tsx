@@ -282,7 +282,9 @@ export async function generateMetadata({
     alternates: {
       canonical: `/categories/${category.slug}`,
     },
-    title: `${category.name} | Bark Ornament`,
+    title: {
+      absolute: `${category.name} | Bark Ornament`,
+    },
     description: category.description,
   };
 }
@@ -348,7 +350,7 @@ async function CategoryDetailContent({
   );
 
   return (
-    <main className="bg-[#FAF7F0] text-[#30251F]">
+    <div className="bg-[#FAF7F0] text-[#30251F]">
 
       {/* =====================================
           1. CATEGORY HERO
@@ -754,7 +756,7 @@ async function CategoryDetailContent({
           </p>
         </div>
       </section>
-    </main>
+    </div>
   );
 }
 
@@ -773,7 +775,7 @@ export default function CategoryDetailPage({
   return (
     <Suspense
       fallback={
-        <main className="min-h-screen bg-[#FAF7F0] text-[#30251F]">
+        <div className="min-h-screen bg-[#FAF7F0] text-[#30251F]">
           <section className="bg-[#30251F] px-5 py-20 text-[#FAF7F0] sm:px-8">
             <div className="mx-auto max-w-7xl">
               <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#E3B65D]">
@@ -799,7 +801,7 @@ export default function CategoryDetailPage({
               </p>
             </div>
           </section>
-        </main>
+        </div>
       }
     >
       <CategoryDetailContent params={params} />

@@ -18,6 +18,11 @@
    TYPOGRAPHY UPDATE:
    Cormorant Garamond - Headings
    Manrope - Body and interface text
+
+   FILE 183:
+   Restore visible keyboard-focus outlines
+   on form controls without changing
+   pointer-focus styling.
    ========================================= */
 
 :root {
@@ -449,6 +454,26 @@ img {
   border-color: var(--color-orange);
   outline: 2px solid transparent;
   box-shadow: 0 0 0 3px rgba(185, 80, 22, 0.2);
+}
+
+/*
+ * FILE 183 — KEYBOARD ACCESSIBILITY
+ *
+ * Restore a solid focus outline when
+ * navigating form controls by keyboard.
+ *
+ * This rule must follow the general
+ * form :focus rule so its outline wins.
+ *
+ * Mouse focus retains the original
+ * border and subtle shadow treatment.
+ */
+
+.form-input:focus-visible,
+.form-select:focus-visible,
+.form-textarea:focus-visible {
+  outline: 3px solid var(--color-orange);
+  outline-offset: 3px;
 }
 
 .form-textarea {

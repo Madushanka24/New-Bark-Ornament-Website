@@ -12,7 +12,7 @@ import {
 } from "@/lib/sanity-gallery-photography";
 
 export const metadata: Metadata = {
-  title: "Gallery & Product Showcase | Bark Ornament",
+  title: "Gallery & Product Showcase",
   description:
     "Explore Bark Ornament's hospitality product collections, from menus and printed stationery to bags, wooden accessories, ceramics and guest gifting.",
 };
@@ -381,7 +381,7 @@ async function SanityProductPreview({
 
 export default function GalleryPage() {
   return (
-    <main className="bg-[#FAF7F0] text-[#30251F]">
+    <div className="bg-[#FAF7F0] text-[#30251F]">
 
       {/* =====================================
           1. HERO SECTION
@@ -770,6 +770,6 @@ export default function GalleryPage() {
           </p>
         </div>
       </section>
-    </main>
+    </div>
   );
 }

@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 export const metadata: Metadata = {
-  title: "About Us | Our Story | Bark Ornament",
+  title: "About Us | Our Story",
   description:
     "Discover Bark Ornament's journey from Bees Digital in 1998 to a Sri Lankan hospitality product supplier serving the Maldives, Seychelles and beyond.",
 };
@@ -25,6 +25,10 @@ export const metadata: Metadata = {
  * Correct dark-background heading visibility in:
  * 1. About Us hero
  * 2. Discover Our Collections CTA
+ *
+ * FILE 185:
+ * - Avoid nested main landmarks.
+ * - Prevent duplicate branding in page title.
  *
  * No database calls, API requests, server actions,
  * quotation submissions, email delivery or new packages.
@@ -171,7 +175,7 @@ function BrandMotif() {
 
 export default function AboutPage() {
   return (
-    <main className="bg-[#FAF7F0] text-[#30251F]">
+    <div className="bg-[#FAF7F0] text-[#30251F]">
       {/* =====================================
           1. HERO AND BREADCRUMB
           ===================================== */}
@@ -615,6 +619,6 @@ export default function AboutPage() {
           </p>
         </div>
       </section>
-    </main>
+    </div>
   );
 }

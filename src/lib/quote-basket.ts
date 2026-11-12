@@ -14,6 +14,12 @@
    - Support server-supplied CMS product records
    - Treat browser storage as untrusted data
 
+   FILE 177:
+   - Preserve whitespace in editable notes
+   - Preserve notes when restoring storage
+   - Maintain 2,000-character notes limit
+   - Preserve basket identity and quantity rules
+
    Browser-side basket functionality.
    No checkout or public selling prices.
 
@@ -111,6 +117,23 @@ function cleanText(
   }
 
   return value.trim().slice(0, maxLength);
+}
+
+/**
+ * FILE 177:
+ *
+ * Preserve whitespace in notes while the
+ * customer is editing the textarea.
+ *
+ * Trimming here would remove spaces after
+ * words and interfere with normal typing.
+ *
+ * Enforce the existing length limit.
+ */
+function cleanNotes(value: unknown): string {
+  return typeof value === "string"
+    ? value.slice(0, MAX_NOTES_LENGTH)
+    : "";
 }
 
 function normalizeQuantity(
@@ -256,6 +279,7 @@ export function addProductToBasket(
   notes = ""
 ): QuoteBasket {
   const normalizedOptions = cleanOptions(options);
+  const normalizedNotes = cleanNotes(notes);
   const normalizedQuantity =
     normalizeQuantity(quantity);
 
@@ -282,8 +306,9 @@ export function addProductToBasket(
                 item.quantity + normalizedQuantity
               ),
               notes:
-                cleanText(notes, MAX_NOTES_LENGTH) ||
-                item.notes,
+                normalizedNotes.trim().length > 0
+                  ? normalizedNotes
+                  : item.notes,
             }
           : item
       ),
@@ -302,10 +327,7 @@ export function addProductToBasket(
     categorySlug: product.categorySlug,
     quantity: normalizedQuantity,
     options: normalizedOptions,
-    notes: cleanText(
-      notes,
-      MAX_NOTES_LENGTH
-    ),
+    notes: normalizedNotes,
   };
 
   return {
@@ -367,10 +389,7 @@ export function updateBasketNotes(
       item.id === itemId
         ? {
             ...item,
-            notes: cleanText(
-              notes,
-              MAX_NOTES_LENGTH
-            ),
+            notes: cleanNotes(notes),
           }
         : item
     ),
@@ -526,10 +545,7 @@ function restoreItem(
       record.quantity
     ),
     options,
-    notes: cleanText(
-      record.notes,
-      MAX_NOTES_LENGTH
-    ),
+    notes: cleanNotes(record.notes),
   };
 }
 

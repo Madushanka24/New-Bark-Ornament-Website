@@ -5,10 +5,18 @@ import ApprovedProductImage, {
   type ApprovedPhoto,
 } from "@/components/ApprovedProductImage";
 
-import { approvedHomepageImages } from "@/lib/approved-homepage-images";
+import {
+  approvedHomepageImages,
+} from "@/lib/approved-homepage-images";
+
 import ApprovedCatalogueImage from "@/components/ApprovedCatalogueImage";
 
-import { useEffect, useMemo, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+
 import Link from "next/link";
 
 import type {
@@ -22,75 +30,52 @@ import type {
    File: src/app/products/CatalogueClient.tsx
    Theme: Golden Coastal Luxury
 
-   FILE 150 STEP E7Z:
-   - Remove local product registry imports
-   - Remove local category registry imports
-   - Remove runtime sortProducts import
-   - Require server-supplied catalogue data
-   - Preserve local development preview mode
-   - Preserve public publication safeguards
+   FILE 155 - STEP F27
 
-   FILE 152 STEP D:
-   - Accept optional server-validated photography
-   - Associate photographs with stable product IDs
-   - Pass approved photography to product cards
-   - Preserve original local image fallback
-   - Do not display CMS photography for draft/demo
-   - No browser-side Sanity requests
+   - Restore File 152 cataloguePhotos contract.
+   - Preserve approved Sanity photography.
+   - Preserve local approved-image fallbacks.
+   - Support multi-word product searching.
+   - Preserve category filtering and sorting.
+   - Preserve public product safeguards.
+   - Preserve development preview behavior.
+   - Preserve product and category navigation.
+   - Preserve existing Golden Coastal design.
 
-   UI FIX 05:
-   - Removed duplicate quotation CTA
-   - Preserved shared footer quotation CTA
-
-   UI FIX 08:
-   - Fixed dark-background hero heading color
-
-   Existing search, filtering, sorting,
-   category cards and product cards preserved.
+   No CMS publication, quotation submission
+   or automatic email functionality is enabled.
    ========================================== */
 
 /* ==========================================
    SERVER DATA CONTRACT
+
+   The server supplies:
+   - Validated products
+   - Validated categories
+   - Current catalogue mode
+   - Optional approved photography
+
+   The photography mapping uses stable
+   product IDs rather than URL slugs.
    ========================================== */
 
 export type CatalogueClientProps = {
   catalogueProducts: readonly Product[];
   catalogueCategories: readonly ProductCategory[];
   catalogueMode: "development" | "public";
-
-  /**
-   * Optional approved Sanity primary photographs.
-   *
-   * The server must validate each photograph
-   * and its product association before supplying
-   * this mapping.
-   *
-   * Key: stable product.id
-   * Value: approved primary photograph or null
-   *
-   * This property does not enable CMS publication
-   * or trigger any browser-side data fetching.
-   */
   cataloguePhotos?: Readonly<
-    Record<string, ApprovedPhoto | null>
+    Record<string, ApprovedPhoto>
   >;
 };
 
-/*
- * Runtime fallbacks protect against missing
- * server props without importing the local
- * development registry into the browser.
- *
- * An empty catalogue is preferable to
- * exposing development records accidentally.
- */
-
 const EMPTY_PRODUCTS: readonly Product[] = [];
-const EMPTY_CATEGORIES: readonly ProductCategory[] = [];
+
+const EMPTY_CATEGORIES:
+  readonly ProductCategory[] = [];
 
 const EMPTY_PHOTOS: Readonly<
-  Record<string, ApprovedPhoto | null>
-> = Object.freeze({});
+  Record<string, ApprovedPhoto>
+> = {};
 
 /* ==========================================
    CATEGORY VALIDATION
@@ -102,7 +87,9 @@ function validCategory(
 ): string {
   if (
     value &&
-    categories.some((item) => item.slug === value)
+    categories.some(
+      (item) => item.slug === value
+    )
   ) {
     return value;
   }
@@ -111,7 +98,45 @@ function validCategory(
 }
 
 /* ==========================================
+   FILE 155 - MULTI-WORD SEARCH
+
+   Search: "menu folder"
+
+   Product:
+   "Customized Hotel Menu Folder"
+
+   Both terms must match but need not
+   appear next to each other.
+
+   Preserves case-insensitive matching.
+   ========================================== */
+
+function matchesSearchTerms(
+  searchableText: string,
+  search: string
+): boolean {
+  const terms = search
+    .trim()
+    .toLocaleLowerCase("en")
+    .split(/\s+/)
+    .filter(Boolean);
+
+  if (terms.length === 0) {
+    return true;
+  }
+
+  const normalizedText =
+    searchableText.toLocaleLowerCase("en");
+
+  return terms.every(
+    (term) => normalizedText.includes(term)
+  );
+}
+
+/* ==========================================
    PRODUCT PHOTO PLACEHOLDER
+
+   Preserved from the existing catalogue.
    ========================================== */
 
 function PhotoPlaceholder({
@@ -137,8 +162,18 @@ function PhotoPlaceholder({
         strokeLinejoin="round"
         aria-hidden="true"
       >
-        <rect x="3" y="3" width="18" height="18" rx="2" />
-        <circle cx="8.5" cy="8.5" r="1.5" />
+        <rect
+          x="3"
+          y="3"
+          width="18"
+          height="18"
+          rx="2"
+        />
+        <circle
+          cx="8.5"
+          cy="8.5"
+          r="1.5"
+        />
         <path d="m21 15-5-5L5 21" />
       </svg>
 
@@ -156,11 +191,12 @@ function PhotoPlaceholder({
 /* ==========================================
    CATEGORY CARD
 
-   Two working actions:
-   1. Visit dedicated category page
-   2. Filter the current catalogue
-
-   Category records come from the server.
+   Preserves:
+   - Category photography
+   - Category detail links
+   - Filter button
+   - Selected state
+   - Existing styling and transitions
    ========================================== */
 
 function CategoryCard({
@@ -213,12 +249,16 @@ function CategoryCard({
             className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-[#B95016] px-5 py-3 text-sm font-bold text-white transition-colors hover:bg-[#963E10]"
           >
             View Category Page
-            <span aria-hidden="true">→</span>
+            <span aria-hidden="true">
+              →
+            </span>
           </Link>
 
           <button
             type="button"
-            onClick={() => onFilter(category.slug)}
+            onClick={() =>
+              onFilter(category.slug)
+            }
             aria-pressed={selected}
             className={`inline-flex min-h-11 items-center justify-center rounded-md border px-5 py-3 text-sm font-bold transition-colors ${
               selected
@@ -226,7 +266,9 @@ function CategoryCard({
                 : "border-[#C59A45] bg-transparent text-[#30251F] hover:bg-[#E9DDC9]"
             }`}
           >
-            {selected ? "Filter Active ✓" : "Filter Products"}
+            {selected
+              ? "Filter Active ✓"
+              : "Filter Products"}
           </button>
         </div>
       </div>
@@ -237,34 +279,59 @@ function CategoryCard({
 /* ==========================================
    PRODUCT CARD
 
-   Product and category information is
-   supplied through server-provided arrays.
+   FILE 155 / FILE 152 COMPATIBILITY
 
-   FILE 152 STEP D:
-   Accept the optional approved Sanity photo
-   from the parent catalogue client.
+   The server may provide one approved
+   Sanity primary photo per product ID.
+
+   If an approved photo is available:
+   render it through ApprovedProductImage.
+
+   Otherwise:
+   preserve ApprovedCatalogueImage,
+   including its existing local image
+   lookup and placeholder behavior.
+
+   No browser-side Sanity requests.
    ========================================== */
 
 function ProductCard({
   product,
   categories,
-  sanityPhoto = null,
+  photo,
 }: {
   product: Product;
   categories: readonly ProductCategory[];
-  sanityPhoto?: ApprovedPhoto | null;
+  photo: ApprovedPhoto | null;
 }) {
   const category = categories.find(
-    (item) => item.slug === product.categorySlug
+    (item) =>
+      item.slug === product.categorySlug
   );
+
+  const eligiblePhoto =
+    product.status === "published" &&
+    product.isDemo === false
+      ? photo
+      : null;
 
   return (
     <article className="flex h-full flex-col overflow-hidden rounded-xl border border-[#E4D7C4] bg-white text-center shadow-sm transition-shadow duration-300 hover:shadow-lg">
-      <ApprovedCatalogueImage
-        product={product}
-        sanityPhoto={sanityPhoto}
-        variant="card"
-      />
+      {eligiblePhoto ? (
+        <ApprovedProductImage
+          label={product.name}
+          photo={eligiblePhoto}
+          aspect="wide"
+          fit="contain"
+          sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+          className="min-h-[210px] sm:min-h-[220px]"
+        />
+      ) : (
+        <ApprovedCatalogueImage
+          product={product}
+          variant="card"
+        />
+      )}
 
       <div className="flex flex-1 flex-col items-center p-6">
         {product.isDemo && (
@@ -274,7 +341,8 @@ function ProductCard({
         )}
 
         <p className="text-xs font-bold uppercase tracking-[0.1em] text-[#B95016]">
-          {category?.name ?? "Hospitality Products"}
+          {category?.name ??
+            "Hospitality Products"}
         </p>
 
         <h3 className="mt-4 font-serif text-xl leading-snug text-[#30251F]">
@@ -296,7 +364,9 @@ function ProductCard({
           className="mt-6 inline-flex min-h-12 items-center justify-center gap-2 rounded-md bg-[#B95016] px-6 py-3 text-sm font-bold text-white transition-colors hover:bg-[#963E10]"
         >
           View Product Details
-          <span aria-hidden="true">→</span>
+          <span aria-hidden="true">
+            →
+          </span>
         </Link>
       </div>
     </article>
@@ -306,18 +376,13 @@ function ProductCard({
 /* ==========================================
    MAIN CATALOGUE CLIENT
 
-   E7Z CONTRACT:
-   - No local registry fallback.
-   - Both data arrays required by TypeScript.
-   - Operating mode supplied by the server.
-   - Development previews remain supported.
-   - Public records are filtered defensively.
-   - No server-only Sanity readers imported.
-
-   FILE 152 STEP D:
-   - Optional approved photo mapping.
-   - No additional data requests.
-   - No photography for draft/demo products.
+   - All product data supplied by server.
+   - All category data supplied by server.
+   - Photography supplied by server.
+   - No local product registry import.
+   - No server-only Sanity reader import.
+   - Public mode excludes draft/demo.
+   - Development mode retains previews.
    ========================================== */
 
 export default function CatalogueClient({
@@ -326,14 +391,6 @@ export default function CatalogueClient({
   catalogueMode,
   cataloguePhotos,
 }: CatalogueClientProps) {
-  /*
-   * All catalogue records must arrive
-   * through the server component.
-   *
-   * The public mode fails closed if
-   * catalogueMode is missing or invalid.
-   */
-
   const publicCatalogue =
     catalogueMode !== "development";
 
@@ -346,10 +403,9 @@ export default function CatalogueClient({
   const activePhotos =
     cataloguePhotos ?? EMPTY_PHOTOS;
 
-  /*
-   * Category dropdown options must use
-   * the server-supplied categories.
-   */
+  /* ========================================
+     CATEGORY DROPDOWN OPTIONS
+     ======================================== */
 
   const categoryOptions = useMemo(
     () => [
@@ -365,30 +421,24 @@ export default function CatalogueClient({
     [activeCategories]
   );
 
-  const [search, setSearch] = useState("");
-  const [category, setCategory] = useState("all");
+  const [search, setSearch] =
+    useState("");
+
+  const [category, setCategory] =
+    useState("all");
 
   const [sort, setSort] =
     useState<ProductSort>("name-asc");
-
-  /*
-   * Development:
-   * The preview checkbox keeps its
-   * original behavior.
-   *
-   * Public:
-   * The preview checkbox is hidden and
-   * never affects publication eligibility.
-   */
 
   const [showPreviews, setShowPreviews] =
     useState(true);
 
   /* ========================================
-     READ CATEGORY FROM BROWSER URL
+     READ CATEGORY FROM URL
 
-     Recheck when navigating Back/Forward
-     or when active categories change.
+     Preserve browser Back/Forward behavior
+     and synchronization with the active
+     server-provided category list.
      ======================================== */
 
   useEffect(() => {
@@ -421,7 +471,7 @@ export default function CatalogueClient({
   }, [activeCategories]);
 
   /* ========================================
-     UPDATE FILTER AND URL TOGETHER
+     CATEGORY FILTER AND URL
      ======================================== */
 
   function selectCategory(slug: string) {
@@ -437,7 +487,9 @@ export default function CatalogueClient({
     );
 
     if (nextCategory === "all") {
-      url.searchParams.delete("category");
+      url.searchParams.delete(
+        "category"
+      );
     } else {
       url.searchParams.set(
         "category",
@@ -448,7 +500,9 @@ export default function CatalogueClient({
     window.history.replaceState(
       window.history.state,
       "",
-      url.pathname + url.search + url.hash
+      url.pathname +
+        url.search +
+        url.hash
     );
   }
 
@@ -458,11 +512,15 @@ export default function CatalogueClient({
     selectCategory("all");
   }
 
-  function filterFromCard(slug: string) {
+  function filterFromCard(
+    slug: string
+  ) {
     selectCategory(slug);
 
     document
-      .getElementById("product-results")
+      .getElementById(
+        "product-results"
+      )
       ?.scrollIntoView({
         behavior: window.matchMedia(
           "(prefers-reduced-motion: reduce)"
@@ -473,23 +531,19 @@ export default function CatalogueClient({
   }
 
   /* ========================================
-     FILTER AND SORT PRODUCT RESULTS
+     FILTER AND SORT PRODUCTS
 
-     All records come from server props.
+     File 155:
+     Multi-word search is supported.
 
-     Public mode always requires published
-     non-demo products, even if preview
-     state happens to be true.
+     Search and category filtering remain
+     combined.
 
-     The original sortProducts behavior
-     is reproduced locally to avoid a
-     runtime import of @/lib/products.
+     Publication eligibility does not
+     depend on search or photo availability.
      ======================================== */
 
   const filteredProducts = useMemo(() => {
-    const query =
-      search.trim().toLowerCase();
-
     const source = activeProducts.filter(
       (product) =>
         !publicCatalogue && showPreviews
@@ -503,7 +557,8 @@ export default function CatalogueClient({
         const productCategory =
           activeCategories.find(
             (item) =>
-              item.slug === product.categorySlug
+              item.slug ===
+              product.categorySlug
           );
 
         const matchesCategory =
@@ -518,37 +573,31 @@ export default function CatalogueClient({
           ...product.materials,
           ...product.sizes,
           ...product.finishes,
-        ]
-          .join(" ")
-          .toLowerCase();
-
-        const matchesSearch =
-          query === "" ||
-          searchableText.includes(query);
+        ].join(" ");
 
         return (
           matchesCategory &&
-          matchesSearch
+          matchesSearchTerms(
+            searchableText,
+            search
+          )
         );
       }
     );
 
-    /*
-     * Equivalent to the original:
-     *
-     * sortProducts(matches, sort)
-     *
-     * Avoid importing the local product
-     * data module at runtime.
-     */
+    return [...matches].sort(
+      (a, b) => {
+        if (sort === "name-desc") {
+          return b.name.localeCompare(
+            a.name
+          );
+        }
 
-    return [...matches].sort((a, b) => {
-      if (sort === "name-desc") {
-        return b.name.localeCompare(a.name);
+        return a.name.localeCompare(
+          b.name
+        );
       }
-
-      return a.name.localeCompare(b.name);
-    });
+    );
   }, [
     search,
     category,
@@ -560,31 +609,85 @@ export default function CatalogueClient({
   ]);
 
   /* ========================================
-     FILTER VISIBLE CATEGORY CARDS
+     CATEGORY CARD SEARCH
+
+     A category remains visible when:
+     - Its name/description matches; or
+     - An eligible product in it matches.
+
+     This ensures that "menu folder"
+     can also reveal the menu category.
      ======================================== */
 
   const visibleCategories = useMemo(() => {
-    const query =
-      search.trim().toLowerCase();
-
-    if (!query) {
+    if (search.trim() === "") {
       return activeCategories;
     }
 
     return activeCategories.filter(
-      (item) =>
-        `${item.name} ${item.description}`
-          .toLowerCase()
-          .includes(query)
+      (item) => {
+        const categoryText = [
+          item.name,
+          item.description,
+        ].join(" ");
+
+        if (
+          matchesSearchTerms(
+            categoryText,
+            search
+          )
+        ) {
+          return true;
+        }
+
+        return activeProducts.some(
+          (product) => {
+            const productEligible =
+              !publicCatalogue &&
+              showPreviews
+                ? true
+                : product.status ===
+                    "published" &&
+                  product.isDemo === false;
+
+            if (
+              !productEligible ||
+              product.categorySlug !==
+                item.slug
+            ) {
+              return false;
+            }
+
+            const searchableText = [
+              product.name,
+              product.shortDescription,
+              product.description,
+              item.name,
+              ...product.materials,
+              ...product.sizes,
+              ...product.finishes,
+            ].join(" ");
+
+            return matchesSearchTerms(
+              searchableText,
+              search
+            );
+          }
+        );
+      }
     );
   }, [
     search,
     activeCategories,
+    activeProducts,
+    publicCatalogue,
+    showPreviews,
   ]);
 
   const selectedCategory =
     activeCategories.find(
-      (item) => item.slug === category
+      (item) =>
+        item.slug === category
     );
 
   const hasFilters =
@@ -596,7 +699,6 @@ export default function CatalogueClient({
     <>
       {/* ====================================
           1. PAGE HERO
-          UI FIX 08 - HEADING VISIBILITY
           ==================================== */}
 
       <section className="relative overflow-hidden bg-[#30251F] px-5 py-20 text-center text-[#FAF7F0] sm:py-24">
@@ -677,7 +779,9 @@ export default function CatalogueClient({
                 type="search"
                 value={search}
                 onChange={(event) =>
-                  setSearch(event.target.value)
+                  setSearch(
+                    event.target.value
+                  )
                 }
                 placeholder="Search products or materials..."
                 className="h-12 w-full rounded-md border border-[#D9C8B0] bg-white px-4 text-sm text-[#30251F] focus:border-[#B95016] focus:outline-none focus:ring-2 focus:ring-[#B95016]/20"
@@ -874,7 +978,6 @@ export default function CatalogueClient({
                 className="mt-5 inline-flex min-h-11 items-center gap-2 text-sm font-bold text-[#B95016] hover:underline"
               >
                 Open Complete Category Page
-
                 <span aria-hidden="true">
                   →
                 </span>
@@ -903,11 +1006,10 @@ export default function CatalogueClient({
                     categories={
                       activeCategories
                     }
-                    sanityPhoto={
-                      product.status === "published" &&
-                      product.isDemo === false
-                        ? activePhotos[product.id] ?? null
-                        : null
+                    photo={
+                      activePhotos[
+                        product.id
+                      ] ?? null
                     }
                   />
                 )
@@ -933,40 +1035,35 @@ export default function CatalogueClient({
                 Reset Filters
               </button>
 
-              {!publicCatalogue && !showPreviews && (
-                <button
-                  type="button"
-                  onClick={() =>
-                    setShowPreviews(true)
-                  }
-                  className="btn btn-secondary mt-4 ml-2"
-                >
-                  Show Development Previews
-                </button>
-              )}
+              {!publicCatalogue &&
+                !showPreviews && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setShowPreviews(true)
+                    }
+                    className="btn btn-secondary mt-4 ml-2"
+                  >
+                    Show Development Previews
+                  </button>
+                )}
             </div>
           )}
 
-          {!publicCatalogue && showPreviews && (
-            <p className="mx-auto mt-10 max-w-2xl text-center text-xs leading-6 text-[#74675E]">
-              Development previews are illustrative.
-              They do not confirm product availability,
-              specifications, stock, prices or lead times.
-            </p>
-          )}
+          {!publicCatalogue &&
+            showPreviews && (
+              <p className="mx-auto mt-10 max-w-2xl text-center text-xs leading-6 text-[#74675E]">
+                Development previews are illustrative.
+                They do not confirm product availability,
+                specifications, stock, prices or lead times.
+              </p>
+            )}
         </div>
       </section>
 
       {/* ====================================
-          UI FIX 05
-
-          Duplicate quotation section removed.
-
-          The shared Footer.tsx contains
-          the quotation call-to-action.
-
-          Product listings transition
-          directly to the existing footer.
+          Shared footer quotation CTA
+          is preserved outside this component.
           ==================================== */}
     </>
   );
