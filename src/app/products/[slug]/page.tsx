@@ -31,17 +31,18 @@ import {
 } from "@/lib/public-catalogue-product";
 
 /**
- * BARK ORNAMENT — FILE 151 STEP E6-E
+ * BARK ORNAMENT
+ * FILE 153 — STEP F5
  *
  * PRODUCT DETAIL PAGE
  * Theme: Golden Coastal Luxury
  *
  * CMS INTEGRATION
  * - Resolve local products first.
- * - Prepare gated CMS-only product resolution.
- * - Use the same resolver for page and metadata.
+ * - Support approved CMS-only products.
  * - Preserve existing local product URLs.
- * - Keep unapproved CMS records excluded.
+ * - Exclude unpublished CMS records.
+ * - Use the same resolver for page and metadata.
  *
  * NEXT.JS 16 INSTANT NAVIGATION
  * - URL-dependent content remains asynchronous.
@@ -63,24 +64,20 @@ import {
  * - Public recommendations reject demo products.
  * - Fallback recommendations use the same rules.
  *
- * PRESERVED FUNCTIONALITY
- * - Dynamic product routes
- * - Product SEO metadata
- * - Development preview restrictions
- * - Category breadcrumbs
- * - Product descriptions
- * - Materials, sizes and finishes
- * - Existing local Add to Quote behavior
- * - Related local product recommendations
+ * QUOTATION BASKET — FILE 153
+ * - Eligible local products retain Add to Quote.
+ * - Eligible CMS products gain Add to Quote.
+ * - Draft/demo products cannot enter the basket.
+ * - Valid catalogue categories are required.
+ * - Existing AddToQuote behavior is preserved.
+ * - Final verification happens separately
+ *   on the Request Quotation page.
  *
  * SAFETY
- * - CMS public integration remains disabled.
+ * - CMS public integration remains flag-controlled.
  * - No fabricated products or photographs.
  * - No direct database access.
- * - No new API endpoints.
  * - No email or quotation submission changes.
- * - CMS-only basket actions remain restricted
- *   until quotation compatibility is verified.
  */
 
 type ProductPageProps = {
@@ -91,12 +88,6 @@ type ProductPageProps = {
 
 /* ==========================================
    1. GENERATE PRODUCT ROUTES
-
-   Preserve the existing local route list.
-
-   CMS-only routes will be resolved at
-   request time after public integration
-   is explicitly activated.
    ========================================== */
 
 export function generateStaticParams() {
@@ -154,13 +145,6 @@ export function generateStaticParams() {
 
 /* ==========================================
    2. DYNAMIC PRODUCT SEO METADATA
-
-   Use the same product resolver as the
-   rendered detail page.
-
-   Draft/demo products remain noindex.
-
-   Unknown products remain noindex.
    ========================================== */
 
 export async function generateMetadata({
@@ -202,14 +186,6 @@ export async function generateMetadata({
 /* ==========================================
    3. APPROVED PRODUCT PHOTO DISPLAY
    ========================================== */
-
-/**
- * Retains the existing product photograph
- * display interface and luxury placeholders.
- *
- * Approved image URLs are validated by
- * their corresponding image readers.
- */
 
 function ProductPhotoPlaceholder({
   label,
@@ -279,13 +255,6 @@ function SpecificationList({
 
 /* ==========================================
    5. RELATED PRODUCT PREVIEW CARD
-
-   Existing local related product behavior
-   is preserved.
-
-   CMS-only related recommendations will
-   be connected after all routes support
-   the unified published catalogue.
    ========================================== */
 
 function RelatedProductCard({
@@ -334,12 +303,6 @@ function RelatedProductCard({
 
 /* ==========================================
    6. PRODUCT DETAIL CONTENT
-
-   All URL-dependent work remains inside
-   this asynchronous component.
-
-   The main exported page places this
-   component inside Suspense.
    ========================================== */
 
 async function ProductDetailContent({
@@ -353,7 +316,8 @@ async function ProductDetailContent({
    *
    * Local products retain precedence.
    *
-   * Approved CMS products remain gated.
+   * CMS products remain subject to the
+   * guarded public publication switch.
    */
 
   const resolved =
@@ -369,28 +333,50 @@ async function ProductDetailContent({
     source,
   } = resolved;
 
+  /* ========================================
+     FILE 153 — QUOTATION ELIGIBILITY
+
+     Source alone must not determine whether
+     a product can enter the quotation basket.
+
+     The server-side resolver has already
+     checked current publication eligibility.
+
+     Local development-preview records may
+     still resolve for display, but cannot
+     be added to a quotation.
+
+     CMS products must pass the existing
+     approval and publication readers.
+     ======================================== */
+
+  const canAddToQuote =
+    resolved.indexable &&
+    product.status === "published" &&
+    product.isDemo === false &&
+    category !== null;
+
   /*
-   * FILE 151 STEP E6-E
-   *
    * Preserve local draft/demo recommendations
    * only in development preview mode.
    *
    * Production and public CMS mode require
    * published, non-demo related products.
-   *
-   * Both the category recommendations and
-   * fallback recommendations use the same
-   * eligibility rule.
    */
 
   const developmentPreviewAllowed =
     process.env.NODE_ENV === "development" &&
     process.env.CATALOGUE_CMS_PUBLIC_ENABLED !== "true";
 
-  const isEligibleRelatedProduct = (item: Product) =>
+  const isEligibleRelatedProduct = (
+    item: Product
+  ) =>
     item.id !== product.id &&
     (developmentPreviewAllowed ||
-      (item.status === "published" && item.isDemo === false));
+      (
+        item.status === "published" &&
+        item.isDemo === false
+      ));
 
   const relatedInCategory =
     source === "local"
@@ -402,13 +388,12 @@ async function ProductDetailContent({
       : [];
 
   /*
-   * Existing related-product fallback.
+   * Preserve existing related-product
+   * fallback for local records.
    *
-   * For local records, preserve previous
-   * same-category and preview suggestions.
-   *
-   * CMS-only related products are held
-   * until complete public route integration.
+   * CMS-only related recommendations
+   * remain deferred until full catalogue
+   * route integration.
    */
 
   const relatedProducts =
@@ -427,12 +412,6 @@ async function ProductDetailContent({
 
   /* ========================================
      APPROVED PRODUCT PHOTOGRAPHY
-
-     Keep the current local gallery fallback
-     and four photographic slots.
-
-     The product ID now comes from the
-     unified validated catalogue resolver.
      ======================================== */
 
   const localGallery =
@@ -511,7 +490,9 @@ async function ProductDetailContent({
               Home
             </Link>
 
-            <span aria-hidden="true">/</span>
+            <span aria-hidden="true">
+              /
+            </span>
 
             <Link
               href="/products"
@@ -702,6 +683,7 @@ async function ProductDetailContent({
           <div className="mt-9 text-center">
             <p className="text-sm font-medium text-[#30251F]">
               Customization:{" "}
+
               <span className="font-normal text-[#74675E]">
                 {product.isDemo
                   ? "To be confirmed"
@@ -716,6 +698,7 @@ async function ProductDetailContent({
 
       {/* ====================================
           5. QUOTATION INFORMATION
+          FILE 153 — STEP F5
           ==================================== */}
 
       <section className="bg-[#FAF7F0] px-5 py-16 text-center sm:py-20">
@@ -729,28 +712,22 @@ async function ProductDetailContent({
           </h2>
 
           <p className="mx-auto mt-6 max-w-2xl text-base leading-8 text-[#74675E]">
-            {source === "local"
+            {canAddToQuote
               ? "Add this product to your quotation basket and specify your preferred quantity, materials, sizes and customization."
-              : "Contact Bark Ornament to discuss your preferred quantity, materials, sizes and customization requirements."}
+              : "This product is not currently eligible for online quotation. Please explore our published product catalogue."}
           </p>
 
           <div className="mt-10">
-            {source === "local" ? (
+            {canAddToQuote ? (
               <AddToQuote product={product} />
             ) : (
               <div className="rounded-xl border border-[#E4D7C4] bg-white p-6">
                 <p className="text-sm leading-7 text-[#74675E]">
-                  Online quotation-basket support for this
-                  product is being verified. Please contact
-                  Bark Ornament to discuss your requirements.
+                  {product.isDemo ||
+                  product.status !== "published"
+                    ? "This product is a development preview and cannot be added to a quotation basket."
+                    : "Online quotation requests are not currently available for this product."}
                 </p>
-
-                <Link
-                  href="/contact"
-                  className="mt-5 inline-flex min-h-11 items-center justify-center rounded-md bg-[#B95016] px-6 py-3 text-sm font-bold text-white transition-colors hover:bg-[#963E10]"
-                >
-                  Contact Us
-                </Link>
               </div>
             )}
           </div>
@@ -814,9 +791,6 @@ async function ProductDetailContent({
 
 /* ==========================================
    7. SUSPENSE LOADING SHELL
-
-   This fallback can render without
-   reading the product URL parameters.
    ========================================== */
 
 function ProductDetailFallback() {
@@ -856,12 +830,6 @@ function ProductDetailFallback() {
 
 /* ==========================================
    8. MAIN DYNAMIC PRODUCT PAGE
-
-   The default exported page does not
-   await URL parameters.
-
-   The asynchronous content is rendered
-   inside Suspense for Instant Navigation.
    ========================================== */
 
 export default function ProductDetailPage({

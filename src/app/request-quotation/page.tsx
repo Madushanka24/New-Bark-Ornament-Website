@@ -1,21 +1,28 @@
+
 "use client";
 
-/* ==========================================
-   BARK ORNAMENT (PVT) LTD
-   FILE 128 - REQUEST A QUOTATION (EMAIL COMPOSE)
-   src/app/request-quotation/page.tsx
-
-   Customer-selected email composition only.
-   - Existing quotation basket and customer form
-   - Gmail, Outlook Web or default mail application
-   - Copy/paste fallback for long requests
-   - No website-side API submissions
-   - No automatic email or database writes
-   - Customer reviews and clicks Send manually
-
-   The existing /api/quotations backend is preserved
-   separately and remains disabled.
-   ========================================== */
+/**
+ * BARK ORNAMENT (PVT) LTD
+ * FILE 153 — STEP F3
+ *
+ * REQUEST A QUOTATION
+ * src/app/request-quotation/page.tsx
+ *
+ * Original multi-product quotation workflow.
+ *
+ * FILE 153 INTEGRATION:
+ * - Verify saved products against the public catalogue.
+ * - Support eligible local and Sanity CMS products.
+ * - Use trusted product names and categories.
+ * - Block unavailable products.
+ * - Reverify before preview, copy and compose.
+ * - Invalidate prepared content when inputs change.
+ *
+ * No quotation API submission.
+ * No automatic email sending.
+ * No database writes.
+ * Customer manually sends the prepared email.
+ */
 
 import {
   useEffect,
@@ -23,34 +30,35 @@ import {
   useRef,
   useState,
 } from "react";
+
 import Link from "next/link";
-import { useQuoteBasket } from "@/components/QuoteBasketProvider";
+
+import {
+  useQuoteBasket,
+} from "@/components/QuoteBasketProvider";
+
 import {
   MAX_ITEM_QUANTITY,
   type QuoteBasketItem,
 } from "@/lib/quote-basket";
+
 import {
   buildQuotationEmailDraft,
   type QuotationEmailDraft,
+  type QuotationDraftCustomer,
 } from "@/lib/quotation-email-draft";
 
+/* ==========================================
+   1. APPROVED QUOTATION RECIPIENT
+   ========================================== */
+
 /**
- * FILE 129 — VERIFIED QUOTATION RECIPIENT
+ * Management approval remains disabled.
  *
- * Two requirements must be satisfied:
- *
- * 1. Management has explicitly approved
- *    the quotation mailbox.
- *
- * 2. The approved address is configured
- *    through the public environment variable.
- *
- * Keep the approval lock false until
- * explicit authorization is received.
- *
- * Never place passwords, API keys or
- * private credentials in NEXT_PUBLIC variables.
+ * Do not activate until the official
+ * quotation mailbox is explicitly approved.
  */
+
 const QUOTATION_RECIPIENT_APPROVED = false;
 
 const APPROVED_QUOTATION_RECIPIENT =
@@ -62,7 +70,7 @@ const APPROVED_QUOTATION_RECIPIENT =
     : "";
 
 /* ==========================================
-   CUSTOMER FORM TYPES
+   2. CUSTOMER FORM
    ========================================== */
 
 type CustomerForm = {
@@ -89,10 +97,229 @@ const INITIAL_CUSTOMER: CustomerForm = {
   consent: false,
 };
 
-type ComposeProvider = "gmail" | "outlook" | "default";
+type ComposeProvider =
+  | "gmail"
+  | "outlook"
+  | "default";
 
 /* ==========================================
-   QUANTITY CONTROL
+   3. PRODUCT VERIFICATION
+   ========================================== */
+
+/**
+ * Browser basket data is untrusted.
+ *
+ * The server verifies the product identity
+ * against the approved public catalogue.
+ *
+ * This request sends product IDs/slugs only.
+ * No customer information is transmitted.
+ */
+
+type VerificationResult =
+  | {
+      kind: "ready";
+      items: QuoteBasketItem[];
+    }
+  | {
+      kind: "unavailable";
+      names: string[];
+    }
+  | {
+      kind: "error";
+      message: string;
+    };
+
+type VerificationIssue = {
+  basketSnapshot: string;
+  message: string;
+  names: string[];
+};
+
+function isRecord(
+  value: unknown
+): value is Record<string, unknown> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value)
+  );
+}
+
+const SAFE_SLUG_PATTERN =
+  /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+async function verifyBasketProducts(
+  selections: readonly QuoteBasketItem[]
+): Promise<VerificationResult> {
+  if (
+    selections.length === 0 ||
+    selections.length > 100
+  ) {
+    return {
+      kind: "error",
+      message:
+        "Please review the number of products in your quotation basket.",
+    };
+  }
+
+  try {
+    const response = await fetch(
+      "/api/catalogue/verify-quote",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        cache: "no-store",
+        signal: AbortSignal.timeout(12000),
+        body: JSON.stringify({
+          items: selections.map((item) => ({
+            productId: item.productId,
+            productSlug: item.productSlug,
+          })),
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      return {
+        kind: "error",
+        message:
+          "We could not verify your selected products. Please try again.",
+      };
+    }
+
+    const data: unknown =
+      await response.json();
+
+    if (
+      !isRecord(data) ||
+      typeof data.verified !== "boolean" ||
+      !Array.isArray(data.results) ||
+      data.results.length !== selections.length
+    ) {
+      return {
+        kind: "error",
+        message:
+          "The product verification response was invalid. Please try again.",
+      };
+    }
+
+    const trustedItems: QuoteBasketItem[] = [];
+    const unavailableNames: string[] = [];
+
+    for (
+      let index = 0;
+      index < selections.length;
+      index++
+    ) {
+      const savedItem = selections[index];
+      const result: unknown =
+        data.results[index];
+
+      if (
+        !isRecord(result) ||
+        result.index !== index ||
+        typeof result.available !== "boolean"
+      ) {
+        return {
+          kind: "error",
+          message:
+            "Product verification could not be completed safely.",
+        };
+      }
+
+      if (result.available === false) {
+        if (result.product !== null) {
+          return {
+            kind: "error",
+            message:
+              "Product verification returned inconsistent information.",
+          };
+        }
+
+        unavailableNames.push(
+          savedItem.productName
+        );
+
+        continue;
+      }
+
+      const product = result.product;
+
+      if (
+        !isRecord(product) ||
+        product.productId !==
+          savedItem.productId ||
+        product.productSlug !==
+          savedItem.productSlug ||
+        typeof product.productName !==
+          "string" ||
+        product.productName.trim().length === 0 ||
+        product.productName.length > 200 ||
+        typeof product.categorySlug !==
+          "string" ||
+        !SAFE_SLUG_PATTERN.test(
+          product.categorySlug
+        )
+      ) {
+        return {
+          kind: "error",
+          message:
+            "The verified product information did not match your selection.",
+        };
+      }
+
+      trustedItems.push({
+        ...savedItem,
+
+        // Use server-authoritative catalogue data.
+        productId: product.productId,
+        productSlug: product.productSlug,
+        productName: product.productName,
+        categorySlug: product.categorySlug,
+
+        // Preserve customer requirements.
+        quantity: savedItem.quantity,
+        options: { ...savedItem.options },
+        notes: savedItem.notes,
+      });
+    }
+
+    if (unavailableNames.length > 0) {
+      return {
+        kind: "unavailable",
+        names: unavailableNames,
+      };
+    }
+
+    if (
+      data.verified !== true ||
+      trustedItems.length !== selections.length
+    ) {
+      return {
+        kind: "error",
+        message:
+          "Not all selected products could be verified.",
+      };
+    }
+
+    return {
+      kind: "ready",
+      items: trustedItems,
+    };
+  } catch {
+    return {
+      kind: "error",
+      message:
+        "The product verification service is unavailable. Check your connection and try again.",
+    };
+  }
+}
+
+/* ==========================================
+   4. QUANTITY CONTROL
    ========================================== */
 
 function QuantityControl({
@@ -108,7 +335,6 @@ function QuantityControl({
   const [draft, setDraft] = useState(
     String(item.quantity)
   );
-
 
   function applyQuantity() {
     const value = Number(draft);
@@ -133,7 +359,10 @@ function QuantityControl({
         aria-label={`Decrease quantity for ${item.productName}`}
         disabled={item.quantity <= 1}
         onClick={() =>
-          onChange(item.id, item.quantity - 1)
+          onChange(
+            item.id,
+            item.quantity - 1
+          )
         }
         className="flex h-11 w-11 items-center justify-center rounded-md border border-[#D9C8B0] bg-[#FAF7F0] text-xl text-[#30251F] hover:bg-[#E9DDC9] disabled:cursor-not-allowed disabled:opacity-40"
       >
@@ -167,7 +396,10 @@ function QuantityControl({
           item.quantity >= MAX_ITEM_QUANTITY
         }
         onClick={() =>
-          onChange(item.id, item.quantity + 1)
+          onChange(
+            item.id,
+            item.quantity + 1
+          )
         }
         className="flex h-11 w-11 items-center justify-center rounded-md border border-[#D9C8B0] bg-[#FAF7F0] text-xl text-[#30251F] hover:bg-[#E9DDC9] disabled:cursor-not-allowed disabled:opacity-40"
       >
@@ -178,9 +410,7 @@ function QuantityControl({
 }
 
 /* ==========================================
-   BASKET ITEM CARD
-
-   Centered presentation from File 28.
+   5. BASKET ITEM CARD
    ========================================== */
 
 function BasketItemCard({
@@ -204,7 +434,6 @@ function BasketItemCard({
 }) {
   const notesId = useId();
 
-
   const options = [
     ["Material", item.options.material],
     ["Size", item.options.size],
@@ -222,7 +451,9 @@ function BasketItemCard({
           <button
             type="button"
             disabled={disabled}
-            onClick={() => onRemove(item.id)}
+            onClick={() =>
+              onRemove(item.id)
+            }
             className="min-h-11 rounded-md border border-[#D9C8B0] px-4 py-2 text-sm font-semibold text-[#963E10] hover:bg-[#FAF7F0] disabled:opacity-50"
           >
             Remove Product
@@ -298,7 +529,12 @@ function BasketItemCard({
           maxLength={2000}
           disabled={disabled}
           placeholder="Additional product requirements..."
-          onChange={(event) => onNotesChange(item.id, event.target.value)}
+          onChange={(event) =>
+            onNotesChange(
+              item.id,
+              event.target.value
+            )
+          }
           className="form-textarea"
         />
 
@@ -311,7 +547,7 @@ function BasketItemCard({
 }
 
 /* ==========================================
-   CUSTOMER INPUT FIELD
+   6. CUSTOMER INPUT FIELD
    ========================================== */
 
 function CustomerField({
@@ -344,6 +580,7 @@ function CustomerField({
         className="form-label"
       >
         {label}
+
         {required && (
           <span className="ml-1 text-[#B95016]">
             *
@@ -371,7 +608,7 @@ function CustomerField({
 }
 
 /* ==========================================
-   MAIN QUOTATION PAGE - FILE 128
+   7. MAIN REQUEST QUOTATION PAGE
    ========================================== */
 
 export default function RequestQuotationPage() {
@@ -388,88 +625,161 @@ export default function RequestQuotationPage() {
   } = useQuoteBasket();
 
   const [customer, setCustomer] =
-    useState<CustomerForm>({ ...INITIAL_CUSTOMER });
-  const [composeMessage, setComposeMessage] = useState("");
+    useState<CustomerForm>({
+      ...INITIAL_CUSTOMER,
+    });
 
-  const [reviewDraft, setReviewDraft] = useState<{
-    draft: QuotationEmailDraft;
-    basketSnapshot: string;
-  } | null>(null);
+  const [composeMessage, setComposeMessage] =
+    useState("");
 
-/* FILE 134: FOCUS GENERATED PREVIEW */
-useEffect(() => {
-  if (reviewDraft) {
-    previewHeadingRef.current?.focus();
-  }
-}, [reviewDraft]);
+  const [
+    manualCopyText,
+    setManualCopyText,
+  ] = useState("");
 
-  const currentBasketSnapshot = JSON.stringify(items);
+  const [reviewDraft, setReviewDraft] =
+    useState<{
+      draft: QuotationEmailDraft;
+      basketSnapshot: string;
+      formRevision: number;
+    } | null>(null);
 
-  const currentReviewDraft =
-    reviewDraft && isLoaded && !isEmpty &&
-    reviewDraft.basketSnapshot === currentBasketSnapshot
-      ? reviewDraft.draft
-      : null;
-  const [manualCopyText, setManualCopyText] = useState("");
+  const [
+    formRevision,
+    setFormRevision,
+  ] = useState(0);
 
-  /* FILE 135 - PREPARED EMAIL CONSISTENCY */
-
-  const [formRevision, setFormRevision] = useState(0);
-
-  const [preparedVersion, setPreparedVersion] = useState<{
+  const [
+    preparedVersion,
+    setPreparedVersion,
+  ] = useState<{
     formRevision: number;
     basketSnapshot: string;
   } | null>(null);
 
+  const [
+    isVerifying,
+    setIsVerifying,
+  ] = useState(false);
+
+  const [
+    verificationIssue,
+    setVerificationIssue,
+  ] = useState<VerificationIssue | null>(
+    null
+  );
+
+  const formRef =
+    useRef<HTMLFormElement>(null);
+
+  const previewHeadingRef =
+    useRef<HTMLHeadingElement>(null);
+
   const copyAttemptRef = useRef(0);
+
+  const verificationAttemptRef = useRef(0);
+
+  const formRevisionRef = useRef(0);
+
+  /* ========================================
+     8. SNAPSHOT CONSISTENCY
+     ======================================== */
+
+  const currentBasketSnapshot =
+    JSON.stringify(items);
+
+  const basketSnapshotRef = useRef(
+    currentBasketSnapshot
+  );
+
+  basketSnapshotRef.current =
+    currentBasketSnapshot;
 
   const preparedStateIsCurrent =
     preparedVersion !== null &&
-    preparedVersion.formRevision === formRevision &&
-    preparedVersion.basketSnapshot === currentBasketSnapshot;
+    preparedVersion.formRevision ===
+      formRevision &&
+    preparedVersion.basketSnapshot ===
+      currentBasketSnapshot;
 
-  const currentComposeMessage = preparedStateIsCurrent
-    ? composeMessage
-    : "";
+  const currentComposeMessage =
+    preparedStateIsCurrent
+      ? composeMessage
+      : "";
 
-  const currentManualCopyText = preparedStateIsCurrent
-    ? manualCopyText
-    : "";
-  const formRef = useRef<HTMLFormElement>(null);
-const previewHeadingRef = useRef<HTMLHeadingElement>(null);
+  const currentManualCopyText =
+    preparedStateIsCurrent
+      ? manualCopyText
+      : "";
 
-  const recipient = APPROVED_QUOTATION_RECIPIENT.trim();
+  const currentReviewDraft =
+    reviewDraft !== null &&
+    preparedStateIsCurrent &&
+    isLoaded &&
+    !isEmpty &&
+    reviewDraft.formRevision ===
+      formRevision &&
+    reviewDraft.basketSnapshot ===
+      currentBasketSnapshot
+      ? reviewDraft.draft
+      : null;
+
+  const currentVerificationIssue =
+    verificationIssue?.basketSnapshot ===
+    currentBasketSnapshot
+      ? verificationIssue
+      : null;
+
+  const recipient =
+    APPROVED_QUOTATION_RECIPIENT.trim();
+
   const hasApprovedRecipient =
-    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient);
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
+      recipient
+    );
+
+  /* ========================================
+     9. PREVIEW FOCUS
+     ======================================== */
+
+  useEffect(() => {
+    if (currentReviewDraft) {
+      previewHeadingRef.current?.focus();
+    }
+  }, [currentReviewDraft]);
+
+  /* ========================================
+     10. INVALIDATE OLD PREPARATIONS
+     ======================================== */
+
+  function invalidatePreparedContent() {
+    verificationAttemptRef.current += 1;
+    copyAttemptRef.current += 1;
+
+    formRevisionRef.current += 1;
+
+    setFormRevision(
+      formRevisionRef.current
+    );
+
+    setPreparedVersion(null);
+    setReviewDraft(null);
+    setManualCopyText("");
+    setComposeMessage("");
+    setVerificationIssue(null);
+    setIsVerifying(false);
+  }
 
   function updateCustomer(
     field: keyof CustomerForm,
     value: string | boolean
   ) {
     invalidatePreparedContent();
+
     setCustomer((previous) => ({
       ...previous,
       [field]: value,
     }));
-    setComposeMessage("");
-    setManualCopyText("");
-  }
-
-  function handlePreviewQuotation() {
-    copyAttemptRef.current += 1;
-    setReviewDraft(null);
-
-    const draft = prepareEmailDraft();
-    if (!draft) return;
-
-    setReviewDraft({
-      draft,
-      basketSnapshot: JSON.stringify(items),
-    });
-
-    setComposeMessage(
-      "Quotation preview prepared. Review the details before copying or opening an email app."
-    );
   }
 
   function handleClearBasket() {
@@ -480,34 +790,37 @@ const previewHeadingRef = useRef<HTMLHeadingElement>(null);
     ) {
       invalidatePreparedContent();
       clearItems();
-      setComposeMessage("");
-      setManualCopyText("");
     }
   }
 
-  /** Read existing customer fields; never submit to a server. */
-  /* FILE 135 - INVALIDATE OLD EMAIL CONTENT */
+  /* ========================================
+     11. VERIFY AND PREPARE EMAIL
+     ======================================== */
 
-  function invalidatePreparedContent() {
-    copyAttemptRef.current += 1;
+  async function prepareVerifiedEmailDraft():
+    Promise<QuotationEmailDraft | null> {
+    const initialRevision =
+      formRevisionRef.current;
 
-    setFormRevision(revision => revision + 1);
+    const initialBasketSnapshot =
+      currentBasketSnapshot;
 
-    setPreparedVersion(null);
+    setPreparedVersion({
+      formRevision: initialRevision,
+      basketSnapshot: initialBasketSnapshot,
+    });
+
     setReviewDraft(null);
     setManualCopyText("");
+    setVerificationIssue(null);
     setComposeMessage("");
-  }
 
-  function prepareEmailDraft(): QuotationEmailDraft | null {
-    setPreparedVersion({
-      formRevision,
-      basketSnapshot: currentBasketSnapshot,
-    });
     const form = formRef.current;
 
     if (!form) {
-      setComposeMessage("The customer form is unavailable.");
+      setComposeMessage(
+        "The customer form is unavailable."
+      );
       return null;
     }
 
@@ -518,97 +831,297 @@ const previewHeadingRef = useRef<HTMLHeadingElement>(null);
       return null;
     }
 
-    if (!isLoaded || items.length === 0) {
+    if (
+      !isLoaded ||
+      items.length === 0
+    ) {
       setComposeMessage(
         "Please add at least one product to your quotation basket."
       );
       return null;
     }
 
+    /* Read customer details locally. */
+
     const formData = new FormData(form);
-    const read = (name: string): string => {
+
+    const read = (
+      name: string
+    ): string => {
       const value = formData.get(name);
-      return typeof value === "string" ? value.trim() : "";
+
+      return typeof value === "string"
+        ? value.trim()
+        : "";
     };
 
-    const destination = read("destination");
-    const otherDestination = read("other-destination");
-    if (destination === "Other" && !otherDestination) {
-      setComposeMessage("Please specify your delivery destination.");
-      return null;
-    }
+    const destination =
+      read("destination");
 
-    const phone = read("customer-phone");
+    const otherDestination =
+      read("other-destination");
 
-    if (phone && !/^\+?[0-9\s().-]{6,40}$/.test(phone)) {
+    if (
+      destination === "Other" &&
+      !otherDestination
+    ) {
       setComposeMessage(
-        "Enter a valid Phone / WhatsApp number (6?40 characters)."
+        "Please specify your delivery destination."
       );
-      form.querySelector<HTMLInputElement>("#customer-phone")?.focus();
       return null;
     }
+
+    const phone =
+      read("customer-phone");
+
+    if (
+      phone &&
+      !/^\+?[0-9\s().-]{6,40}$/.test(
+        phone
+      )
+    ) {
+      setComposeMessage(
+        "Enter a valid Phone / WhatsApp number (6–40 characters)."
+      );
+
+      form
+        .querySelector<HTMLInputElement>(
+          "#customer-phone"
+        )
+        ?.focus();
+
+      return null;
+    }
+
+    const customerDetails:
+      QuotationDraftCustomer = {
+      fullName:
+        read("customer-name"),
+
+      companyName:
+        read("company-name"),
+
+      email:
+        read("customer-email"),
+
+      phone:
+        read("customer-phone"),
+
+      destination:
+        destination === "Other"
+          ? `Other — ${otherDestination}`
+          : destination,
+
+      requiredDeliveryDate:
+        read("delivery-date"),
+
+      message:
+        read("enquiry-message"),
+    };
+
+    /* Verify the basket before generating
+       any customer-visible email draft. */
+
+    const attempt =
+      ++verificationAttemptRef.current;
+
+    setIsVerifying(true);
+
+    setComposeMessage(
+      "Verifying your selected products against our current catalogue..."
+    );
+
     try {
-      return buildQuotationEmailDraft(
-        {
-          fullName: read("customer-name"),
-          companyName: read("company-name"),
-          email: read("customer-email"),
-          phone: read("customer-phone"),
-          destination:
-            destination === "Other"
-              ? `Other — ${otherDestination}`
-              : destination,
-          requiredDeliveryDate: read("delivery-date"),
-          message: read("enquiry-message"),
-        },
-        items
-      );
-    } catch (error) {
-      setComposeMessage(
-        error instanceof Error
-          ? error.message
-          : "Unable to prepare quotation details."
-      );
-      return null;
+      const verification =
+        await verifyBasketProducts(items);
+
+      /* Discard results from an older
+         request or modified form/basket. */
+
+      if (
+        attempt !==
+          verificationAttemptRef.current ||
+        initialRevision !==
+          formRevisionRef.current ||
+        initialBasketSnapshot !==
+          basketSnapshotRef.current
+      ) {
+        return null;
+      }
+
+      if (
+        verification.kind ===
+        "unavailable"
+      ) {
+        setVerificationIssue({
+          basketSnapshot:
+            initialBasketSnapshot,
+
+          message:
+            "One or more selected products are no longer eligible for quotation. Please review the products listed below and remove unavailable selections before trying again.",
+
+          names:
+            verification.names,
+        });
+
+        setComposeMessage(
+          "Quotation preparation was blocked because some products could not be verified."
+        );
+
+        return null;
+      }
+
+      if (
+        verification.kind === "error"
+      ) {
+        setVerificationIssue({
+          basketSnapshot:
+            initialBasketSnapshot,
+
+          message:
+            verification.message,
+
+          names: [],
+        });
+
+        setComposeMessage(
+          verification.message
+        );
+
+        return null;
+      }
+
+      /* Use only verified catalogue identity
+         when constructing the email. */
+
+      try {
+        return buildQuotationEmailDraft(
+          customerDetails,
+          verification.items
+        );
+      } catch (error) {
+        setComposeMessage(
+          error instanceof Error
+            ? error.message
+            : "Unable to prepare quotation details."
+        );
+
+        return null;
+      }
+    } finally {
+      if (
+        attempt ===
+        verificationAttemptRef.current
+      ) {
+        setIsVerifying(false);
+      }
     }
   }
 
-  /** Opens an email composer. The website never sends the email. */
-  /* ==========================================
-     FILE 130 — RELIABLE EMAIL COMPOSITION
+  /* ========================================
+     12. PREVIEW QUOTATION
+     ======================================== */
 
-     - Approved recipient required
-     - Full quotation details retained
-     - Correct mailto line-break encoding
-     - Length-aware fallback
-     - No automatic email sending
-     - No API or database operations
-     ========================================== */
-
-  function handleCompose(
-    provider: ComposeProvider
-  ) {
+  async function handlePreviewQuotation() {
     copyAttemptRef.current += 1;
-    if (!hasApprovedRecipient) {
-      setPreparedVersion({ formRevision, basketSnapshot: currentBasketSnapshot });
-      setComposeMessage(
-        "The company quotation email address has not yet been approved."
-      );
-      return;
-    }
 
-    const draft = prepareEmailDraft();
+    const draft =
+      await prepareVerifiedEmailDraft();
 
     if (!draft) {
       return;
     }
 
+    setReviewDraft({
+      draft,
+
+      basketSnapshot:
+        currentBasketSnapshot,
+
+      formRevision:
+        formRevisionRef.current,
+    });
+
+    setComposeMessage(
+      "Quotation preview prepared. Review the details before copying or opening an email app."
+    );
+  }
+
+  /* ========================================
+     13. MANUAL EMAIL COMPOSITION
+     ======================================== */
+
+  async function handleCompose(
+    provider: ComposeProvider
+  ) {
+    copyAttemptRef.current += 1;
+
+    if (!hasApprovedRecipient) {
+      setPreparedVersion({
+        formRevision:
+          formRevisionRef.current,
+
+        basketSnapshot:
+          currentBasketSnapshot,
+      });
+
+      setComposeMessage(
+        "The company quotation email address has not yet been approved."
+      );
+
+      return;
+    }
+
     /*
-     * Preserve complete quotation details.
-     * This text is available if the email
-     * application cannot open or prefill
-     * the message correctly.
+     * A new browser tab must be opened
+     * synchronously from the customer click
+     * to avoid popup blockers.
+     *
+     * It is navigated only after the
+     * catalogue verification succeeds.
      */
+
+    let composeWindow: Window | null =
+      null;
+
+    const formIsValid =
+      formRef.current?.reportValidity() ??
+      false;
+
+    if (
+      formIsValid &&
+      isLoaded &&
+      !isEmpty &&
+      provider !== "default"
+    ) {
+      composeWindow = window.open(
+        "about:blank",
+        "_blank"
+      );
+
+      if (composeWindow) {
+        composeWindow.opener = null;
+
+        try {
+          composeWindow.document.title =
+            "Preparing quotation email";
+
+          composeWindow.document.body.textContent =
+            "Verifying selected products. The email composer will open after verification.";
+        } catch {
+          // The fallback remains available.
+        }
+      }
+    }
+
+    const draft =
+      await prepareVerifiedEmailDraft();
+
+    if (!draft) {
+      composeWindow?.close();
+      return;
+    }
+
     const fullCopyText = [
       `To: ${recipient}`,
       `Subject: ${draft.subject}`,
@@ -616,31 +1129,28 @@ const previewHeadingRef = useRef<HTMLHeadingElement>(null);
       draft.body,
     ].join("\n");
 
-    /*
-     * Encode the destination and message.
-     */
-    const to = encodeURIComponent(
-      recipient
-    ).replace(/%40/gi, "@");
+    const to =
+      encodeURIComponent(
+        recipient
+      ).replace(/%40/gi, "@");
 
-    const subject = encodeURIComponent(
-      draft.subject
-    );
+    const subject =
+      encodeURIComponent(
+        draft.subject
+      );
 
-    const webBody = encodeURIComponent(
-      draft.body
-    );
+    const webBody =
+      encodeURIComponent(
+        draft.body
+      );
 
-    /*
-     * RFC 6068 specifies CRLF for line
-     * breaks within mailto: body values.
-     */
-    const mailtoBody = encodeURIComponent(
-      draft.body.replace(
-        /\r\n|\r|\n/g,
-        "\r\n"
-      )
-    );
+    const mailtoBody =
+      encodeURIComponent(
+        draft.body.replace(
+          /\r\n|\r|\n/g,
+          "\r\n"
+        )
+      );
 
     let url: string;
 
@@ -657,93 +1167,140 @@ const previewHeadingRef = useRef<HTMLHeadingElement>(null);
         `mailto:${to}?subject=${subject}&body=${mailtoBody}`;
     }
 
-    /*
-     * Always retain a copyable backup.
-     *
-     * Email applications may ignore fields,
-     * show a sign-in screen or block
-     * prefilled composition on mobile.
-     */
-    setManualCopyText(fullCopyText);
+    /* Keep complete details available
+       even when an email app cannot open. */
 
-    /*
-     * URL limits vary across browsers.
-     * These conservative thresholds are
-     * safeguards, not universal limits.
-     */
+    setManualCopyText(
+      fullCopyText
+    );
+
     const conservativeLimit =
       provider === "default"
         ? 1800
         : 3500;
 
-    if (url.length > conservativeLimit) {
+    if (
+      url.length >
+      conservativeLimit
+    ) {
+      composeWindow?.close();
+
       setComposeMessage(
         "This quotation contains too much information for a reliable prefilled email link. The complete quotation is displayed below. Copy it into your email application, review the recipient and manually send."
       );
+
       return;
     }
 
-    /*
-     * Request an email composition window.
-     *
-     * Opening an email application does not
-     * mean the message was sent, delivered
-     * or saved by Bark Ornament.
-     */
     try {
-      if (provider === "default") {
-        window.location.assign(url);
-      } else {
-        window.open(
-          url,
-          "_blank",
-          "noopener,noreferrer"
+      if (
+        provider === "default"
+      ) {
+        window.location.assign(
+          url
         );
+      } else if (
+        composeWindow &&
+        !composeWindow.closed
+      ) {
+        composeWindow.location.replace(
+          url
+        );
+      } else {
+        setComposeMessage(
+          "Your browser could not open a new email window. Copy the complete quotation details below and paste them into your email application."
+        );
+
+        return;
       }
 
       setComposeMessage(
         "We attempted to open your email application. Check the recipient, subject and complete quotation details before manually sending. If the message did not open correctly, use the full quotation text displayed below. No enquiry has been submitted through this website."
       );
     } catch {
+      composeWindow?.close();
+
       setComposeMessage(
         "Your browser could not open the selected email application. Copy the complete quotation details displayed below and paste them into your preferred email application."
       );
     }
   }
 
-  /** Clipboard fallback, with selectable text when clipboard fails. */
+  /* ========================================
+     14. COPY QUOTATION
+     ======================================== */
+
   async function handleCopyQuotation() {
-    const copyAttempt = ++copyAttemptRef.current;
-    const draft = prepareEmailDraft();
-    if (!draft) return;
+    const copyAttempt =
+      ++copyAttemptRef.current;
+
+    const draft =
+      await prepareVerifiedEmailDraft();
+
+    if (
+      !draft ||
+      copyAttempt !==
+        copyAttemptRef.current
+    ) {
+      return;
+    }
 
     const details =
-      (hasApprovedRecipient ? `To: ${recipient}\n` : "") +
+      (
+        hasApprovedRecipient
+          ? `To: ${recipient}\n`
+          : ""
+      ) +
       `Subject: ${draft.subject}\n\n${draft.body}`;
 
     try {
-      if (!navigator.clipboard?.writeText) {
-        throw new Error("Clipboard API is unavailable.");
+      if (
+        !navigator.clipboard?.writeText
+      ) {
+        throw new Error(
+          "Clipboard API is unavailable."
+        );
       }
-      await navigator.clipboard.writeText(details);
-      if (copyAttempt !== copyAttemptRef.current) return;
+
+      await navigator.clipboard.writeText(
+        details
+      );
+
+      if (
+        copyAttempt !==
+        copyAttemptRef.current
+      ) {
+        return;
+      }
+
       setManualCopyText("");
+
       setComposeMessage(
         hasApprovedRecipient
-          ? "Quotation details copied. Paste into an email, verify " +
-              "the recipient and manually send."
-          : "Quotation details copied. Confirm the official company " +
-              "quotation email address before sending."
+          ? "Quotation details copied. Paste into an email, verify the recipient and manually send."
+          : "Quotation details copied. Confirm the official company quotation email address before sending."
       );
     } catch {
-      if (copyAttempt !== copyAttemptRef.current) return;
-      setManualCopyText(details);
+      if (
+        copyAttempt !==
+        copyAttemptRef.current
+      ) {
+        return;
+      }
+
+      setManualCopyText(
+        details
+      );
+
       setComposeMessage(
-        "Automatic copying was unavailable. " +
-          "Select and copy the complete details below."
+        "Automatic copying was unavailable. Select and copy the complete details below."
       );
     }
   }
+
+  /* ========================================
+     15. PAGE CONTENT
+     ======================================== */
 
   return (
     <>
@@ -838,16 +1395,31 @@ const previewHeadingRef = useRef<HTMLHeadingElement>(null);
                   <BasketItemCard
                     key={item.id}
                     item={item}
-                    onQuantityChange={(id, quantity) => {
+                    onQuantityChange={(
+                      id,
+                      quantity
+                    ) => {
                       invalidatePreparedContent();
-                      changeQuantity(id, quantity);
+
+                      changeQuantity(
+                        id,
+                        quantity
+                      );
                     }}
-                    onNotesChange={(id, notes) => {
+                    onNotesChange={(
+                      id,
+                      notes
+                    ) => {
                       invalidatePreparedContent();
-                      changeNotes(id, notes);
+
+                      changeNotes(
+                        id,
+                        notes
+                      );
                     }}
                     onRemove={(id) => {
                       invalidatePreparedContent();
+
                       removeItem(id);
                     }}
                   />
@@ -908,424 +1480,570 @@ const previewHeadingRef = useRef<HTMLHeadingElement>(null);
       <section className="section bg-white">
         <div className="container max-w-[950px]">
           <div className="mx-auto mb-10 max-w-3xl text-center">
-            <p className="eyebrow">Customer Information</p>
+            <p className="eyebrow">
+              Customer Information
+            </p>
+
             <h2 className="font-serif text-3xl text-[#30251F] sm:text-4xl">
               Your Enquiry Details
             </h2>
+
             <p className="mt-5 text-base leading-8 text-[#74675E]">
-              Complete your details and choose how to prepare your
-              quotation email. Your selected products and requirements
-              will be included automatically. Review and manually send
-              the email in your chosen application.
+              Complete your details and choose
+              how to prepare your quotation
+              email. Your selected products
+              and requirements will be included
+              automatically after catalogue
+              verification. Review and manually
+              send the email in your chosen
+              application.
             </p>
           </div>
 
           <form
             ref={formRef}
-            onSubmit={(event) => event.preventDefault()}
+            onSubmit={(event) =>
+              event.preventDefault()
+            }
             className="rounded-2xl border border-[#E4D7C4] bg-[#FAF7F0] p-5 sm:p-8"
           >
-                <div className="grid gap-6 sm:grid-cols-2">
+            <div className="grid gap-6 sm:grid-cols-2">
+              <CustomerField
+                id="customer-name"
+                label="Full Name"
+                required
+                maxLength={120}
+                value={
+                  customer.fullName
+                }
+                onChange={(value) =>
+                  updateCustomer(
+                    "fullName",
+                    value
+                  )
+                }
+                autoComplete="name"
+                placeholder="Your full name"
+              />
+
+              <CustomerField
+                id="company-name"
+                label="Hotel / Company Name"
+                required
+                maxLength={180}
+                value={
+                  customer.companyName
+                }
+                onChange={(value) =>
+                  updateCustomer(
+                    "companyName",
+                    value
+                  )
+                }
+                autoComplete="organization"
+                placeholder="Hotel or company name"
+              />
+
+              <CustomerField
+                id="customer-email"
+                label="Email Address"
+                type="email"
+                required
+                maxLength={254}
+                value={
+                  customer.email
+                }
+                onChange={(value) =>
+                  updateCustomer(
+                    "email",
+                    value
+                  )
+                }
+                autoComplete="email"
+                placeholder="name@company.com"
+              />
+
+              <CustomerField
+                id="customer-phone"
+                label="Phone / WhatsApp Number"
+                type="tel"
+                maxLength={40}
+                value={
+                  customer.phone
+                }
+                onChange={(value) =>
+                  updateCustomer(
+                    "phone",
+                    value
+                  )
+                }
+                autoComplete="tel"
+                placeholder="Include country code"
+              />
+
+              <div className="text-left">
+                <label
+                  htmlFor="destination"
+                  className="form-label"
+                >
+                  Delivery Destination *
+                </label>
+
+                <select
+                  id="destination"
+                  name="destination"
+                  required
+                  value={
+                    customer.destination
+                  }
+                  onChange={(event) =>
+                    updateCustomer(
+                      "destination",
+                      event.target.value
+                    )
+                  }
+                  className="form-select"
+                >
+                  <option
+                    value=""
+                    disabled
+                  >
+                    Select destination
+                  </option>
+
+                  <option value="Maldives">
+                    Maldives
+                  </option>
+
+                  <option value="Seychelles">
+                    Seychelles
+                  </option>
+
+                  <option value="Sri Lanka">
+                    Sri Lanka
+                  </option>
+
+                  <option value="Other">
+                    Other / To Be Discussed
+                  </option>
+                </select>
+              </div>
+
+              <CustomerField
+                id="delivery-date"
+                label="Required Delivery Date"
+                type="date"
+                value={
+                  customer.requiredDeliveryDate
+                }
+                onChange={(value) =>
+                  updateCustomer(
+                    "requiredDeliveryDate",
+                    value
+                  )
+                }
+              />
+
+              {customer.destination ===
+                "Other" && (
+                <div className="sm:col-span-2">
                   <CustomerField
-                    id="customer-name"
-                    label="Full Name"
+                    id="other-destination"
+                    label="Specify Delivery Destination"
                     required
-                    maxLength={120}
-                    value={customer.fullName}
-                    onChange={(value) =>
-                      updateCustomer(
-                        "fullName",
-                        value
-                      )
-                    }
-                    autoComplete="name"
-                    placeholder="Your full name"
-                  />
-
-                  <CustomerField
-                    id="company-name"
-                    label="Hotel / Company Name"
-                    required
-                    maxLength={180}
-                    value={customer.companyName}
-                    onChange={(value) =>
-                      updateCustomer(
-                        "companyName",
-                        value
-                      )
-                    }
-                    autoComplete="organization"
-                    placeholder="Hotel or company name"
-                  />
-
-                  <CustomerField
-                    id="customer-email"
-                    label="Email Address"
-                    type="email"
-                    required
-                    maxLength={254}
-                    value={customer.email}
-                    onChange={(value) =>
-                      updateCustomer(
-                        "email",
-                        value
-                      )
-                    }
-                    autoComplete="email"
-                    placeholder="name@company.com"
-                  />
-
-                  <CustomerField
-                    id="customer-phone"
-                    label="Phone / WhatsApp Number"
-                    type="tel"
-                    maxLength={40}
-                    value={customer.phone}
-                    onChange={(value) =>
-                      updateCustomer(
-                        "phone",
-                        value
-                      )
-                    }
-                    autoComplete="tel"
-                    placeholder="Include country code"
-                  />
-
-                  <div className="text-left">
-                    <label
-                      htmlFor="destination"
-                      className="form-label"
-                    >
-                      Delivery Destination *
-                    </label>
-
-                    <select
-                      id="destination"
-                      name="destination"
-                      required
-                      value={customer.destination}
-                      onChange={(event) =>
-                        updateCustomer(
-                          "destination",
-                          event.target.value
-                        )
-                      }
-                      className="form-select"
-                    >
-                      <option
-                        value=""
-                        disabled
-                      >
-                        Select destination
-                      </option>
-
-                      <option value="Maldives">
-                        Maldives
-                      </option>
-
-                      <option value="Seychelles">
-                        Seychelles
-                      </option>
-
-                      <option value="Sri Lanka">
-                        Sri Lanka
-                      </option>
-
-                      <option value="Other">
-                        Other / To Be Discussed
-                      </option>
-                    </select>
-                  </div>
-
-                  <CustomerField
-                    id="delivery-date"
-                    label="Required Delivery Date"
-                    type="date"
+                    maxLength={160}
                     value={
-                      customer.requiredDeliveryDate
+                      customer.otherDestination
                     }
                     onChange={(value) =>
                       updateCustomer(
-                        "requiredDeliveryDate",
+                        "otherDestination",
                         value
                       )
                     }
+                    placeholder="Enter country or destination"
                   />
-
-                  {customer.destination === "Other" && (
-                    <div className="sm:col-span-2">
-                      <CustomerField
-                        id="other-destination"
-                        label="Specify Delivery Destination"
-                        required
-                        maxLength={160}
-                        value={
-                          customer.otherDestination
-                        }
-                        onChange={(value) =>
-                          updateCustomer(
-                            "otherDestination",
-                            value
-                          )
-                        }
-                        placeholder="Enter country or destination"
-                      />
-                    </div>
-                  )}
                 </div>
+              )}
+            </div>
 
-                <div className="mt-6 text-left">
-                  <label
-                    htmlFor="enquiry-message"
-                    className="form-label"
-                  >
-                    Additional Enquiry Details
-                  </label>
+            <div className="mt-6 text-left">
+              <label
+                htmlFor="enquiry-message"
+                className="form-label"
+              >
+                Additional Enquiry Details
+              </label>
 
-                  <textarea
-                    id="enquiry-message"
-                    name="enquiry-message"
-                    rows={5}
-                    maxLength={3000}
-                    value={customer.message}
-                    onChange={(event) =>
-                      updateCustomer(
-                        "message",
-                        event.target.value
-                      )
+              <textarea
+                id="enquiry-message"
+                name="enquiry-message"
+                rows={5}
+                maxLength={3000}
+                value={
+                  customer.message
+                }
+                onChange={(event) =>
+                  updateCustomer(
+                    "message",
+                    event.target.value
+                  )
+                }
+                placeholder="Project requirements, delivery instructions or other details..."
+                className="form-textarea"
+              />
+            </div>
+
+            {/* CONSENT */}
+
+            <div className="mt-7 rounded-lg border border-[#E4D7C4] bg-white p-5">
+              <label className="flex items-start gap-3 text-left text-sm leading-7 text-[#30251F]">
+                <input
+                  type="checkbox"
+                  required
+                  checked={
+                    customer.consent
+                  }
+                  onChange={(event) =>
+                    updateCustomer(
+                      "consent",
+                      event.target.checked
+                    )
+                  }
+                  className="mt-1 h-5 w-5 shrink-0 accent-[#B95016]"
+                />
+
+                <span>
+                  I agree that Bark Ornament
+                  may process the details
+                  provided to respond to
+                  this quotation enquiry.
+
+                  <span className="ml-1 text-[#B95016]">
+                    *
+                  </span>
+                </span>
+              </label>
+            </div>
+
+            {/* FINAL EMAIL REVIEW */}
+
+            <section
+              aria-labelledby="quotation-review-heading"
+              className="mt-8 rounded-xl border border-[#D9C8B0] bg-white p-5 sm:p-7"
+            >
+              <div className="text-center">
+                <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#B95016]">
+                  Final Review
+                </p>
+
+                <h3
+                  id="quotation-review-heading"
+                  className="mt-3 font-serif text-2xl text-[#30251F]"
+                >
+                  Review Your Quotation Email
+                </h3>
+
+                <p className="mx-auto mt-3 max-w-2xl text-sm leading-7 text-[#74675E]">
+                  Check products, quantities,
+                  delivery details and
+                  requirements before sending.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                disabled={
+                  !isLoaded ||
+                  isEmpty ||
+                  isVerifying
+                }
+                onClick={() =>
+                  void handlePreviewQuotation()
+                }
+                className="mt-6 min-h-12 w-full rounded-md bg-[#30251F] px-6 py-3 text-sm font-bold text-white hover:bg-[#4B3930] disabled:opacity-45"
+              >
+                {isVerifying
+                  ? "Verifying Products..."
+                  : "Preview Quotation Email"}
+              </button>
+
+              {/* PRODUCT VERIFICATION ISSUES */}
+
+              {currentVerificationIssue && (
+                <div
+                  role="alert"
+                  className="mt-6 rounded-lg border border-[#C59A45] bg-[#FFF7E7] p-5 text-left text-sm leading-7 text-[#79511C]"
+                >
+                  <p className="font-semibold">
+                    Product Verification Required
+                  </p>
+
+                  <p className="mt-2">
+                    {
+                      currentVerificationIssue.message
                     }
-                    placeholder="Project requirements, delivery instructions or other details..."
-                    className="form-textarea"
-                  />
-                </div>
+                  </p>
 
-                {/* CONSENT */}
-
-                <div className="mt-7 rounded-lg border border-[#E4D7C4] bg-white p-5">
-                  <label className="flex items-start gap-3 text-left text-sm leading-7 text-[#30251F]">
-                    <input
-                      type="checkbox"
-                      required
-                      checked={customer.consent}
-                      onChange={(event) =>
-                        updateCustomer(
-                          "consent",
-                          event.target.checked
+                  {currentVerificationIssue.names
+                    .length > 0 && (
+                    <ul className="mt-3 list-disc space-y-1 pl-5">
+                      {currentVerificationIssue.names.map(
+                        (name, index) => (
+                          <li key={index}>
+                            {name}
+                          </li>
                         )
-                      }
-                      className="mt-1 h-5 w-5 shrink-0 accent-[#B95016]"
-                    />
-
-                    <span>
-                      I agree that Bark Ornament
-                      may process the details
-                      provided to respond to
-                      this quotation enquiry.
-                      <span className="ml-1 text-[#B95016]">
-                        *
-                      </span>
-                    </span>
-                  </label>
-                </div>
-
-                <section
-                  aria-labelledby="quotation-review-heading"
-                  className="mt-8 rounded-xl border border-[#D9C8B0] bg-white p-5 sm:p-7"
-                >
-                  <div className="text-center">
-                    <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#B95016]">
-                      Final Review
-                    </p>
-
-                    <h3
-                      id="quotation-review-heading"
-                      className="mt-3 font-serif text-2xl text-[#30251F]"
-                    >
-                      Review Your Quotation Email
-                    </h3>
-
-                    <p className="mx-auto mt-3 max-w-2xl text-sm leading-7 text-[#74675E]">
-                      Check products, quantities, delivery details and requirements before sending.
-                    </p>
-                  </div>
-
-                  <button
-                    type="button"
-                    disabled={!isLoaded || isEmpty}
-                    onClick={handlePreviewQuotation}
-                    className="mt-6 min-h-12 w-full rounded-md bg-[#30251F] px-6 py-3 text-sm font-bold text-white hover:bg-[#4B3930] disabled:opacity-45"
-                  >
-                    Preview Quotation Email
-                  </button>
-
-                  {currentReviewDraft && (
-                    <div
-                      role="region"
-                      aria-labelledby="quotation-preview-title"
-                      className="mt-7 rounded-lg border border-[#E4D7C4] bg-[#FAF7F0] p-4 sm:p-6"
-                    >
-                      <h4
-        ref={previewHeadingRef}
-        tabIndex={-1}
-        id="quotation-preview-title"
-                        className="scroll-mt-28 font-serif text-xl text-[#30251F]"
-                      >
-                        Your Email Preview
-                      </h4>
-
-                      <p className="mt-3 text-sm text-[#74675E]">
-                        Preview only. No email has been sent or saved.
-                      </p>
-
-                      <dl className="mt-5 space-y-3 text-sm">
-                        <div>
-                          <dt className="font-bold text-[#30251F]">
-                            To
-                          </dt>
-
-                          <dd className="mt-1 break-words text-[#74675E]">
-                            {hasApprovedRecipient
-                              ? recipient
-                              : "Awaiting verified company quotation email"}
-                          </dd>
-                        </div>
-
-                        <div>
-                          <dt className="font-bold text-[#30251F]">
-                            Subject
-                          </dt>
-
-                          <dd className="mt-1 break-words text-[#74675E]">
-                            {currentReviewDraft.subject}
-                          </dd>
-                        </div>
-                      </dl>
-
-                      <div className="mt-5">
-                        <label
-                          htmlFor="quotation-email-preview-body"
-                          className="form-label"
-                        >
-                          Email Body
-                        </label>
-
-                        <textarea
-                          id="quotation-email-preview-body"
-                          readOnly
-                          rows={16}
-                          value={currentReviewDraft.body}
-                          onFocus={(event) => event.currentTarget.select()}
-                          className="form-textarea mt-2"
-                        />
-                      </div>
-
-                      <p className="mt-4 text-xs leading-6 text-[#74675E]">
-                        Review before using Copy Quotation Details or an available
-                        email app. If you change the form or basket,
-                        generate a fresh preview.
-                      </p>
-                    </div>
+                      )}
+                    </ul>
                   )}
-                </section>
 
-                {/* FILE 128 — EMAIL COMPOSE OPTIONS */}
-
-                <div className="mt-7 rounded-lg border border-[#D9C8B0] bg-white p-5 text-center">
-                  <p className="mb-2 font-semibold text-[#30251F]">
-                    Prepare Your Quotation Email
-                  </p>
-                  <p className="text-sm leading-7 text-[#74675E]">
-                    Choose an email application to prepare your enquiry.
-                    The email is not sent automatically. Check all details
-                    and manually press Send in your email app.
+                  <p className="mt-3">
+                    Your selected products
+                    have not been automatically
+                    removed from the basket.
                   </p>
                 </div>
+              )}
 
-                {!hasApprovedRecipient && (
-                  <p
-                    role="note"
-                    className="mt-5 rounded-lg border border-[#D9C8B0] bg-[#FFF7E7] p-4 text-center text-sm leading-6 text-[#79511C]"
-                  >
-                    Email composition is awaiting confirmation of Bark
-                    Ornament&apos;s official quotation mailbox. You can
-                    still prepare and copy your quotation details.
-                  </p>
-                )}
+              {/* VERIFIED EMAIL PREVIEW */}
 
-                <div className="mt-6 grid gap-3 sm:grid-cols-3">
-                  <button
-                    type="button"
-                    disabled={!hasApprovedRecipient || !isLoaded || isEmpty}
-                    onClick={() => handleCompose("gmail")}
-                    className="min-h-12 rounded-md bg-[#B95016] px-4 py-3 text-sm font-bold text-white transition-colors hover:bg-[#963E10] disabled:cursor-not-allowed disabled:opacity-45"
-                  >
-                    Compose in Gmail
-                  </button>
-                  <button
-                    type="button"
-                    disabled={!hasApprovedRecipient || !isLoaded || isEmpty}
-                    onClick={() => handleCompose("outlook")}
-                    className="min-h-12 rounded-md bg-[#30251F] px-4 py-3 text-sm font-bold text-white transition-colors hover:bg-[#4B3930] disabled:cursor-not-allowed disabled:opacity-45"
-                  >
-                    Compose in Outlook
-                  </button>
-                  <button
-                    type="button"
-                    disabled={!hasApprovedRecipient || !isLoaded || isEmpty}
-                    onClick={() => handleCompose("default")}
-                    className="min-h-12 rounded-md border border-[#C59A45] bg-white px-4 py-3 text-sm font-bold text-[#30251F] transition-colors hover:bg-[#E9DDC9] disabled:cursor-not-allowed disabled:opacity-45"
-                  >
-                    Open Default Email App
-                  </button>
-                </div>
-
-                <button
-                  type="button"
-                  disabled={!isLoaded || isEmpty}
-                  onClick={() => void handleCopyQuotation()}
-                  className="mt-4 min-h-12 w-full rounded-md border border-[#C59A45] bg-[#E9DDC9] px-6 py-3 text-sm font-bold text-[#30251F] transition-colors hover:bg-[#DFD0B6] disabled:cursor-not-allowed disabled:opacity-45"
+              {currentReviewDraft && (
+                <div
+                  role="region"
+                  aria-labelledby="quotation-preview-title"
+                  className="mt-7 rounded-lg border border-[#E4D7C4] bg-[#FAF7F0] p-4 sm:p-6"
                 >
-                  Copy Quotation Details
-                </button>
-
-                {currentComposeMessage && (
-                  <p
-                    role="status"
-                    aria-live="polite"
-                    className="mt-5 rounded-lg border border-[#D9C8B0] bg-white p-4 text-center text-sm leading-7 text-[#30251F]"
+                  <h4
+                    ref={
+                      previewHeadingRef
+                    }
+                    tabIndex={-1}
+                    id="quotation-preview-title"
+                    className="scroll-mt-28 font-serif text-xl text-[#30251F]"
                   >
-                    {currentComposeMessage}
-                  </p>
-                )}
+                    Your Email Preview
+                  </h4>
 
-                {currentManualCopyText && (
+                  <p className="mt-3 text-sm text-[#74675E]">
+                    Preview only. No email
+                    has been sent or saved.
+                  </p>
+
+                  <dl className="mt-5 space-y-3 text-sm">
+                    <div>
+                      <dt className="font-bold text-[#30251F]">
+                        To
+                      </dt>
+
+                      <dd className="mt-1 break-words text-[#74675E]">
+                        {hasApprovedRecipient
+                          ? recipient
+                          : "Awaiting verified company quotation email"}
+                      </dd>
+                    </div>
+
+                    <div>
+                      <dt className="font-bold text-[#30251F]">
+                        Subject
+                      </dt>
+
+                      <dd className="mt-1 break-words text-[#74675E]">
+                        {
+                          currentReviewDraft.subject
+                        }
+                      </dd>
+                    </div>
+                  </dl>
+
                   <div className="mt-5">
                     <label
-                      htmlFor="manual-quotation-copy"
+                      htmlFor="quotation-email-preview-body"
                       className="form-label"
                     >
-                      Quotation Details — Select and Copy
+                      Email Body
                     </label>
-                    <textarea
-                      id="manual-quotation-copy"
-                      readOnly
-                      value={currentManualCopyText}
-                      rows={10}
-                      onFocus={(event) => event.currentTarget.select()}
-                      className="form-textarea"
-                    />
-                    <p className="mt-2 text-sm leading-6 text-[#74675E]">
-                      Copy the complete text into your email, confirm the
-                      approved company recipient, review and manually send.
-                    </p>
-                  </div>
-                )}
 
-                <p className="mt-5 text-center text-xs leading-6 text-[#74675E]">
-                  Do not enter sensitive personal information. Your email
-                  application is responsible for sending this quotation;
-                  the website does not save or send it.
+                    <textarea
+                      id="quotation-email-preview-body"
+                      readOnly
+                      rows={16}
+                      value={
+                        currentReviewDraft.body
+                      }
+                      onFocus={(event) =>
+                        event.currentTarget.select()
+                      }
+                      className="form-textarea mt-2"
+                    />
+                  </div>
+
+                  <p className="mt-4 text-xs leading-6 text-[#74675E]">
+                    Product details have been
+                    checked against the public
+                    catalogue. Review before
+                    copying or opening an
+                    email application. If you
+                    change the form or basket,
+                    generate a fresh preview.
+                  </p>
+                </div>
+              )}
+            </section>
+
+            {/* EMAIL COMPOSE OPTIONS */}
+
+            <div className="mt-7 rounded-lg border border-[#D9C8B0] bg-white p-5 text-center">
+              <p className="mb-2 font-semibold text-[#30251F]">
+                Prepare Your Quotation Email
+              </p>
+
+              <p className="text-sm leading-7 text-[#74675E]">
+                Choose an email application
+                to prepare your enquiry.
+                The selected products will
+                be verified again before
+                email preparation. The email
+                is not sent automatically.
+                Check all details and manually
+                press Send in your email app.
+              </p>
+            </div>
+
+            {!hasApprovedRecipient && (
+              <p
+                role="note"
+                className="mt-5 rounded-lg border border-[#D9C8B0] bg-[#FFF7E7] p-4 text-center text-sm leading-6 text-[#79511C]"
+              >
+                Email composition is awaiting
+                confirmation of Bark
+                Ornament&apos;s official
+                quotation mailbox. You can
+                still prepare and copy your
+                quotation details.
+              </p>
+            )}
+
+            <div className="mt-6 grid gap-3 sm:grid-cols-3">
+              <button
+                type="button"
+                disabled={
+                  !hasApprovedRecipient ||
+                  !isLoaded ||
+                  isEmpty ||
+                  isVerifying
+                }
+                onClick={() =>
+                  void handleCompose("gmail")
+                }
+                className="min-h-12 rounded-md bg-[#B95016] px-4 py-3 text-sm font-bold text-white transition-colors hover:bg-[#963E10] disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                Compose in Gmail
+              </button>
+
+              <button
+                type="button"
+                disabled={
+                  !hasApprovedRecipient ||
+                  !isLoaded ||
+                  isEmpty ||
+                  isVerifying
+                }
+                onClick={() =>
+                  void handleCompose("outlook")
+                }
+                className="min-h-12 rounded-md bg-[#30251F] px-4 py-3 text-sm font-bold text-white transition-colors hover:bg-[#4B3930] disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                Compose in Outlook
+              </button>
+
+              <button
+                type="button"
+                disabled={
+                  !hasApprovedRecipient ||
+                  !isLoaded ||
+                  isEmpty ||
+                  isVerifying
+                }
+                onClick={() =>
+                  void handleCompose("default")
+                }
+                className="min-h-12 rounded-md border border-[#C59A45] bg-white px-4 py-3 text-sm font-bold text-[#30251F] transition-colors hover:bg-[#E9DDC9] disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                Open Default Email App
+              </button>
+            </div>
+
+            <button
+              type="button"
+              disabled={
+                !isLoaded ||
+                isEmpty ||
+                isVerifying
+              }
+              onClick={() =>
+                void handleCopyQuotation()
+              }
+              className="mt-4 min-h-12 w-full rounded-md border border-[#C59A45] bg-[#E9DDC9] px-6 py-3 text-sm font-bold text-[#30251F] transition-colors hover:bg-[#DFD0B6] disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              {isVerifying
+                ? "Verifying Products..."
+                : "Copy Quotation Details"}
+            </button>
+
+            {/* STATUS MESSAGES */}
+
+            {currentComposeMessage && (
+              <p
+                role="status"
+                aria-live="polite"
+                className="mt-5 rounded-lg border border-[#D9C8B0] bg-white p-4 text-center text-sm leading-7 text-[#30251F]"
+              >
+                {currentComposeMessage}
+              </p>
+            )}
+
+            {/* MANUAL COPY FALLBACK */}
+
+            {currentManualCopyText && (
+              <div className="mt-5">
+                <label
+                  htmlFor="manual-quotation-copy"
+                  className="form-label"
+                >
+                  Quotation Details — Select
+                  and Copy
+                </label>
+
+                <textarea
+                  id="manual-quotation-copy"
+                  readOnly
+                  value={
+                    currentManualCopyText
+                  }
+                  rows={10}
+                  onFocus={(event) =>
+                    event.currentTarget.select()
+                  }
+                  className="form-textarea"
+                />
+
+                <p className="mt-2 text-sm leading-6 text-[#74675E]">
+                  Copy the complete text into
+                  your email, confirm the
+                  approved company recipient,
+                  review and manually send.
                 </p>
+              </div>
+            )}
+
+            <p className="mt-5 text-center text-xs leading-6 text-[#74675E]">
+              Do not enter sensitive personal
+              information. Your email
+              application is responsible for
+              sending this quotation; the
+              website does not save or send it.
+            </p>
           </form>
         </div>
       </section>

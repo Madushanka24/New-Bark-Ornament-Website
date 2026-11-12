@@ -1,4 +1,3 @@
-
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -182,7 +181,9 @@ export async function generateMetadata({
   if (!market) notFound();
 
   return {
-    title: `${market.name} Hospitality Supply | Bark Ornament`,
+    title: {
+      absolute: `${market.name} Hospitality Supply | Bark Ornament`,
+    },
     description: market.introduction,
   };
 }
@@ -204,7 +205,7 @@ export default async function MarketDetailPage({
   );
 
   return (
-    <main className="bg-[#FAF7F0] text-[#30251F]">
+    <div className="bg-[#FAF7F0] text-[#30251F]">
       {/* HERO AND BREADCRUMBS */}
       <section
         aria-labelledby="market-title"
@@ -543,6 +544,6 @@ export default async function MarketDetailPage({
           </p>
         </div>
       </section>
-    </main>
+    </div>
   );
 }

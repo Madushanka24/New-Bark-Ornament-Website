@@ -9,6 +9,11 @@
 
    Connects individual products to the
    shared quotation basket provider.
+
+   FILE 179:
+   Prevent misleading success feedback when
+   a repeated selection exceeds the maximum
+   combined product quantity.
    ========================================== */
 
 import {
@@ -166,9 +171,13 @@ export default function AddToQuote({
       customization: customization.trim(),
     };
 
-    /* Match the unique-item rules from
-       File 11. Same product and options
-       increase the existing quantity. */
+    /*
+     * Match the unique-item rules from
+     * the existing quotation basket utility.
+     *
+     * The same product with identical options
+     * is stored as one basket selection.
+     */
 
     const signature = JSON.stringify([
       product.id,
@@ -178,16 +187,38 @@ export default function AddToQuote({
       options.customization,
     ]);
 
-    const existing = items.some(
+    const existingItem = items.find(
       (item) => item.id === signature
     );
 
     if (
-      !existing &&
+      !existingItem &&
       itemCount >= MAX_QUOTE_ITEMS
     ) {
       setError(
         "The quotation basket has reached its item limit."
+      );
+      return;
+    }
+
+    /*
+     * FILE 179:
+     *
+     * Prevent the basket utility from silently
+     * capping a combined quantity while this
+     * component displays success feedback.
+     *
+     * Customers can adjust the existing
+     * selection in their quotation basket.
+     */
+
+    if (
+      existingItem &&
+      existingItem.quantity + quantity >
+        MAX_ITEM_QUANTITY
+    ) {
+      setError(
+        "This product selection would exceed the maximum permitted quantity. Please reduce the requested quantity or adjust the existing selection in your quotation basket."
       );
       return;
     }

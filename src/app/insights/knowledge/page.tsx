@@ -9,7 +9,7 @@ import {
 } from "@/lib/sanity-knowledge-articles";
 
 export const metadata: Metadata = {
-  title: "Knowledge Hub | Bark Ornament Insights",
+  title: "Knowledge Hub | Insights",
   description:
     "Explore Bark Ornament's Knowledge Series and planned learning topics on GSM, printing finishes, packaging, freight planning and hospitality products.",
 };
@@ -344,7 +344,7 @@ async function PublishedKnowledgeArticles() {
 
 export default function KnowledgeHubPage() {
   return (
-    <main className="bg-[#FAF7F0] text-[#30251F]">
+    <div className="bg-[#FAF7F0] text-[#30251F]">
       {/* HERO */}
       <section
         aria-labelledby="knowledge-title"
@@ -732,6 +732,6 @@ export default function KnowledgeHubPage() {
           </p>
         </div>
       </section>
-    </main>
+    </div>
   );
 }

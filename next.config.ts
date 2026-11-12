@@ -2,17 +2,21 @@
 import type { NextConfig } from "next";
 
 /**
- * FILE 142 — STEP B1
+ * BARK ORNAMENT — FILE 170
  *
- * Allow approved Sanity CDN photography
- * from the configured Bark Ornament
- * project and dataset.
+ * Approved Sanity CDN photography.
  *
  * Preserve:
  * - Cache Components
  * - Partial Prefetching
  * - Existing Turbopack configuration
  * - Existing application architecture
+ *
+ * Security:
+ * - Allow the configured Sanity project only.
+ * - Allow the configured dataset only.
+ * - Require HTTPS.
+ * - Reject remote image query parameters.
  */
 
 const sanityProjectId =
@@ -41,6 +45,7 @@ const nextConfig: NextConfig = {
             port: "",
             pathname:
               `/images/${sanityProjectId}/${sanityDataset}/**`,
+            search: "",
           },
         ]
       : [],

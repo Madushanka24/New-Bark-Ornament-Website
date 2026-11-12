@@ -1,0 +1,572 @@
+﻿
+@import "tailwindcss";
+
+/* =========================================
+   BARK ORNAMENT - GLOBAL DESIGN SYSTEM
+   Theme: Golden Coastal Luxury
+   Animation: Subtle Luxury
+
+   UI FIX 15:
+   Removed the forced global heading color.
+
+   Headings now inherit their section's text color
+   unless an explicit text color is applied.
+
+   This prevents dark headings from becoming
+   invisible on dark background sections.
+
+   TYPOGRAPHY UPDATE:
+   Cormorant Garamond - Headings
+   Manrope - Body and interface text
+   ========================================= */
+
+:root {
+  /* Brand colors */
+  --color-gold: #c59a45;
+  --color-orange: #b95016;
+  --color-ivory: #faf7f0;
+  --color-sand: #e9ddc9;
+  --color-espresso: #30251f;
+
+  /* Supporting colors */
+  --color-white: #ffffff;
+  --color-muted: #74675e;
+  --color-border: #e4d7c4;
+  --color-surface: #fffdf9;
+
+  /* Typography fallbacks */
+  --font-heading: Georgia, "Times New Roman", serif;
+  --font-body: Arial, Helvetica, sans-serif;
+
+  /* Layout */
+  --container-width: 1200px;
+  --section-spacing: 96px;
+  --header-height: 84px;
+
+  /* Corners */
+  --radius-small: 8px;
+  --radius-medium: 14px;
+  --radius-large: 24px;
+
+  /* Shadows */
+  --shadow-soft: 0 8px 30px rgba(48, 37, 31, 0.06);
+  --shadow-card: 0 14px 36px rgba(48, 37, 31, 0.1);
+
+  /* Animation */
+  --transition-fast: 180ms ease;
+  --transition-normal: 300ms ease;
+  --transition-slow: 600ms ease;
+}
+
+/* =========================================
+   TAILWIND CSS V4 THEME INTEGRATION
+   ========================================= */
+
+@theme inline {
+  --color-gold: var(--color-gold);
+  --color-orange: var(--color-orange);
+  --color-ivory: var(--color-ivory);
+  --color-sand: var(--color-sand);
+  --color-espresso: var(--color-espresso);
+  --color-surface: var(--color-surface);
+  --font-sans: var(--font-body);
+  --font-serif: var(--font-heading);
+}
+
+/* =========================================
+   GLOBAL RESET
+   ========================================= */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  /*
+   * FONT UPDATE - NEXT.JS FONT VARIABLES
+   *
+   * layout.tsx assigns --font-cormorant and
+   * --font-manrope to the body element.
+   *
+   * Resolve the font stacks here so headings,
+   * Tailwind font-serif, body text and
+   * Tailwind font-sans use the selected fonts.
+   *
+   * System fallbacks remain available.
+   */
+
+  --font-heading: var(--font-cormorant, Georgia),
+    "Times New Roman", serif;
+
+  --font-body: var(--font-manrope, Arial),
+    Helvetica, sans-serif;
+
+  margin: 0;
+  min-height: 100vh;
+  background-color: var(--color-ivory);
+  color: var(--color-espresso);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* =========================================
+   GLOBAL TYPOGRAPHY
+   ========================================= */
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+p {
+  margin-top: 0;
+}
+
+/*
+ * UI FIX 15 — IMPORTANT
+ *
+ * Previously:
+ * color: var(--color-espresso);
+ *
+ * That declaration forced dark text on every
+ * heading, even inside dark sections.
+ *
+ * It has been removed.
+ *
+ * Headings inherit their text color unless
+ * a specific text color is provided.
+ *
+ * Light sections inherit espresso from body.
+ * Dark sections can inherit ivory or gold.
+ */
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--font-heading);
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+h1 {
+  font-size: clamp(2.6rem, 5vw, 4.8rem);
+}
+
+h2 {
+  font-size: clamp(2rem, 3.5vw, 3.3rem);
+}
+
+h3 {
+  font-size: clamp(1.35rem, 2vw, 1.8rem);
+}
+
+p {
+  margin-bottom: 1rem;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+img,
+video,
+svg {
+  max-width: 100%;
+}
+
+img,
+video {
+  height: auto;
+}
+
+img {
+  display: block;
+}
+
+/* =========================================
+   TEXT SELECTION
+   ========================================= */
+
+::selection {
+  background-color: var(--color-gold);
+  color: var(--color-espresso);
+}
+
+/* =========================================
+   ACCESSIBILITY
+   ========================================= */
+
+:focus-visible {
+  outline: 3px solid var(--color-orange);
+  outline-offset: 4px;
+}
+
+.skip-link {
+  position: fixed;
+  top: -100px;
+  left: 16px;
+  z-index: 9999;
+  padding: 12px 20px;
+  background: var(--color-espresso);
+  color: var(--color-white);
+}
+
+.skip-link:focus {
+  top: 16px;
+}
+
+/* =========================================
+   CONTAINERS AND SECTIONS
+   ========================================= */
+
+.container {
+  width: min(100% - 40px, var(--container-width));
+  margin-inline: auto;
+}
+
+.section {
+  padding-block: var(--section-spacing);
+}
+
+.section-sand {
+  background-color: var(--color-sand);
+}
+
+.section-white {
+  background-color: var(--color-white);
+}
+
+.section-ivory {
+  background-color: var(--color-ivory);
+}
+
+.section-heading {
+  max-width: 760px;
+  margin: 0 auto 48px;
+  text-align: center;
+}
+
+.section-heading p {
+  color: var(--color-muted);
+}
+
+/* =========================================
+   TYPOGRAPHY UTILITIES
+   ========================================= */
+
+.eyebrow {
+  display: inline-block;
+  margin-bottom: 16px;
+  color: var(--color-orange);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.text-muted {
+  color: var(--color-muted);
+}
+
+.text-gold {
+  color: var(--color-gold);
+}
+
+.text-orange {
+  color: var(--color-orange);
+}
+
+.text-center {
+  text-align: center;
+}
+
+/* =========================================
+   BUTTONS
+   ========================================= */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 12px 26px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-small);
+  font-size: 0.9rem;
+  font-weight: 700;
+  line-height: 1.4;
+  text-align: center;
+  transition:
+    background-color var(--transition-normal),
+    color var(--transition-normal),
+    border-color var(--transition-normal),
+    transform var(--transition-normal),
+    box-shadow var(--transition-normal);
+}
+
+.btn-primary {
+  background-color: var(--color-orange);
+  color: var(--color-white);
+}
+
+.btn-primary:hover {
+  background-color: #963e10;
+  color: var(--color-white);
+  transform: translateY(-2px);
+}
+
+.btn-secondary {
+  border-color: var(--color-gold);
+  background-color: transparent;
+  color: var(--color-espresso);
+}
+
+.btn-secondary:hover {
+  background-color: var(--color-gold);
+  color: var(--color-espresso);
+}
+
+.btn-dark {
+  background-color: var(--color-espresso);
+  color: var(--color-white);
+}
+
+.btn-dark:hover {
+  background-color: #514036;
+  color: var(--color-white);
+}
+
+/* =========================================
+   CARDS
+   ========================================= */
+
+.card {
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-medium);
+  background-color: var(--color-white);
+  box-shadow: var(--shadow-soft);
+  transition:
+    transform var(--transition-normal),
+    box-shadow var(--transition-normal);
+}
+
+.card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-card);
+}
+
+.card-content {
+  padding: 24px;
+}
+
+.card-image {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+}
+
+/* =========================================
+   RESPONSIVE GRIDS
+   ========================================= */
+
+.grid-2,
+.grid-3,
+.grid-4 {
+  display: grid;
+  gap: 28px;
+}
+
+.grid-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.grid-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.grid-4 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+/* =========================================
+   FORM ELEMENTS
+   ========================================= */
+
+.form-label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.form-input,
+.form-select,
+.form-textarea {
+  display: block;
+  width: 100%;
+  min-height: 48px;
+  padding: 12px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  background-color: var(--color-white);
+  color: var(--color-espresso);
+}
+
+.form-input:focus,
+.form-select:focus,
+.form-textarea:focus {
+  border-color: var(--color-orange);
+  outline: 2px solid transparent;
+  box-shadow: 0 0 0 3px rgba(185, 80, 22, 0.2);
+}
+
+.form-textarea {
+  min-height: 130px;
+  resize: vertical;
+}
+
+/* =========================================
+   SUBTLE LUXURY ANIMATIONS
+   ========================================= */
+
+@keyframes luxury-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes luxury-fade-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+.animate-fade-up {
+  animation: luxury-fade-up 650ms ease-out both;
+}
+
+.animate-fade-in {
+  animation: luxury-fade-in 750ms ease-out both;
+}
+
+/* =========================================
+   TABLET RESPONSIVENESS
+   ========================================= */
+
+@media (max-width: 1024px) {
+  :root {
+    --section-spacing: 76px;
+  }
+
+  .grid-4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .grid-3 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* =========================================
+   MOBILE RESPONSIVENESS
+   ========================================= */
+
+@media (max-width: 640px) {
+  :root {
+    --section-spacing: 56px;
+    --header-height: 72px;
+  }
+
+  body {
+    font-size: 15px;
+  }
+
+  .container {
+    width: min(100% - 32px, var(--container-width));
+  }
+
+  .grid-2,
+  .grid-3,
+  .grid-4 {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 20px;
+  }
+
+  .section-heading {
+    margin-bottom: 32px;
+  }
+
+  .btn {
+    padding-inline: 20px;
+  }
+
+  .card-content {
+    padding: 20px;
+  }
+}
+
+/* =========================================
+   REDUCED MOTION ACCESSIBILITY
+   ========================================= */
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .btn:hover,
+  .card:hover {
+    transform: none;
+  }
+}
+

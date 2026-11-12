@@ -7,7 +7,7 @@ import {
 } from "@/lib/catalogue-cms-bridge";
 
 export const metadata: Metadata = {
-  title: "Product Categories | Bark Ornament",
+  title: "Product Categories",
   description:
     "Explore customized hospitality product categories from Bark Ornament (Pvt) Ltd, including printing, menus, bags, wooden items, crafts, gifting and operational supplies.",
 };
